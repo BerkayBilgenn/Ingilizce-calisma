@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 import { istanbulDay } from "./study";
 import { getDashboard, getParticipant, getLatestSet, type StudyWord } from "./store";
 
-export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning">[] }[] };
+export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning">[]; learned: Pick<StudyWord, "term" | "meaning">[] }[] };
 
 export function slotKey(date: Date): string | null {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
@@ -13,12 +13,18 @@ export function slotKey(date: Date): string | null {
 }
 
 export function formatMessage(snapshot: ReminderSnapshot): string | null {
-  const active = snapshot.people.filter((person) => person.remaining.length > 0);
+  const active = snapshot.people.filter((person) => person.remaining.length > 0 || person.learned.length > 0);
   if (!active.length) return null;
   const lines = ["📚 Kelime günlüğü · " + snapshot.day, ""];
   for (const person of active) {
-    lines.push("👤 " + person.name + " · kalan kelimeler");
-    for (const word of person.remaining) lines.push("• " + word.term + " — " + word.meaning);
+    if (person.remaining.length > 0) {
+      lines.push("👤 " + person.name + " · kalan kelimeler");
+      for (const word of person.remaining) lines.push("• " + word.term + " — " + word.meaning);
+    } else {
+      lines.push("✅ " + person.name + " · bugün tüm kelimeleri öğrendim");
+      lines.push("Bugün öğrendiklerim:");
+      for (const word of person.learned) lines.push("• " + word.term + " — " + word.meaning);
+    }
     lines.push("");
   }
   lines.push("Bir sonraki hatırlatma 4 saat sonra.");
@@ -29,7 +35,11 @@ export async function buildSnapshot(db: Client, day: string): Promise<ReminderSn
   const people = await db.execute("SELECT id, name FROM participants ORDER BY id");
   return { day, people: await Promise.all(people.rows.slice(0, 2).map(async (row) => {
     const dashboard = await getDashboard(db, Number(row.id), day);
-    return { name: String(row.name), remaining: dashboard.words.filter((word) => !word.checked).map(({ term, meaning }) => ({ term, meaning })) };
+    return {
+      name: String(row.name),
+      remaining: dashboard.words.filter((word) => !word.checked).map(({ term, meaning }) => ({ term, meaning })),
+      learned: dashboard.words.filter((word) => word.checked).map(({ term, meaning }) => ({ term, meaning })),
+    };
   })) };
 }
 

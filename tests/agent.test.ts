@@ -13,12 +13,16 @@ describe("four-hour reminder slots", () => {
   });
 
   it("formats two separate remaining-word sections", () => {
-    const message = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [{ term: "apple", meaning: "elma" }] }, { name: "Deniz", remaining: [{ term: "book", meaning: "kitap" }] }] });
+    const message = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [{ term: "apple", meaning: "elma" }], learned: [] }, { name: "Deniz", remaining: [{ term: "book", meaning: "kitap" }], learned: [] }] });
     expect(message).toContain("Ada");
     expect(message).toContain("apple — elma");
     expect(message).toContain("Deniz");
     expect(message).toContain("book — kitap");
-    expect(formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [] }, { name: "Deniz", remaining: [] }] })).toBeNull();
+    const complete = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [], learned: [{ term: "apple", meaning: "elma" }] }, { name: "Deniz", remaining: [], learned: [{ term: "book", meaning: "kitap" }] }] });
+    expect(complete).toContain("Ada · bugün tüm kelimeleri öğrendim");
+    expect(complete).toContain("apple — elma");
+    expect(complete).toContain("Deniz · bugün tüm kelimeleri öğrendim");
+    expect(formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [], learned: [] }, { name: "Deniz", remaining: [], learned: [] }] })).toBeNull();
   });
 
   it("claims a slot only once", async () => {
