@@ -1,0 +1,10 @@
+node_modules/
+.next/
+data/
+.env
+.env.local
+.vercel/
+sender/node_modules/
+sender/data/
+sender/.env
+*.tsbuildinfo
