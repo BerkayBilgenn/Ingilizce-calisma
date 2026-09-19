@@ -15,7 +15,7 @@
 
 ## WhatsApp gönderimi
 
-Mac'te çalışan ayrı bir gönderici, birinci numaranın gerçek WhatsApp hesabına QR kodla bağlanır. Kurucu mevcut gruplar arasından hedef grubu seçer. Gönderici her gün İstanbul saatiyle 00.00, 04.00, 08.00, 12.00, 16.00 ve 20.00 dilimlerinde sitenin korumalı uç noktasından iki kişinin güncel kalan kelimelerini alır. Mesajda her kişinin seçtiği görünen ad kullanılır; telefon numaraları grup mesajında gösterilmez. İki kişinin de kalanı yoksa mesaj gönderilmez.
+Mac'te çalışan ayrı bir gönderici, birinci numaranın gerçek WhatsApp hesabına QR kodla bağlanır. Kurucu mevcut gruplar arasından hedef grubu seçer. Gönderici her gün İstanbul saatiyle 00.00, 04.00, 08.00, 12.00, 16.00 ve 20.00 dilimlerinde sitenin korumalı uç noktasından iki kişinin güncel kalan ve o gün öğrendiği kelimeleri alır. Mesajda her kişinin seçtiği görünen ad kullanılır; telefon numaraları grup mesajında gösterilmez. Bir kişi tüm kelimeleri bitirdiyse kendi bölümünde tamamladığı ve o gün öğrendiği kelimeler yazılır. Aktif sette o gün hiç işaretlenmiş kelime yoksa mesaj gönderilmez.
 
 Gönderici aynı zaman diliminde tek mesaj hedefler. Gönderim sonucu kaydedilir; sonuç belirsizse otomatik yeniden deneme yapıp grubu aynı mesajla doldurmaz. Bir bağlantı kesintisi veya Mac'in uyku durumu yaşanırsa arayüzde son durum ve son başarılı gönderim gösterilir. Mac yeniden açıldığında geçmiş dilimlerin tamamı yollanmaz; sıradaki dilimde güncel kalan kelimeler gönderilir. Kurucu, mesaj önizlemesini ve bir defalık elle gönderme seçeneğini kullanabilir.
 
