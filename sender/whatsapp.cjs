@@ -2,7 +2,13 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 
 function createWhatsAppClient({ sessionPath = "./data/whatsapp", onState = () => {}, onQr = () => {} } = {}) {
-  const client = new Client({ authStrategy: new LocalAuth({ dataPath: sessionPath }) });
+  const client = new Client({
+    authStrategy: new LocalAuth({ dataPath: sessionPath }),
+    // Always load the current WhatsApp Web page. A cached page can become
+    // stale and make the first injection race with a navigation.
+    webVersionCache: { type: "none" },
+    authTimeoutMs: 60000,
+  });
   client.on("qr", (value) => { qrcode.generate(value, { small: true }); onQr(value); });
   client.on("ready", () => onState("ready"));
   client.on("authenticated", () => onState("authenticated"));

@@ -80,4 +80,25 @@ client.once("ready", async () => {
   scheduler.start();
 });
 
-client.initialize();
+async function initializeWithRetry() {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await client.initialize();
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const transient = /Execution context was destroyed|Target closed|Session closed|Navigat/i.test(message);
+      if (!transient || attempt === maxAttempts) throw error;
+      console.warn(`WhatsApp Web sayfası yüklenirken yenilendi; yeniden deneniyor (${attempt}/${maxAttempts - 1}).`);
+      await client.destroy().catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+initializeWithRetry().catch((error) => {
+  console.error("WhatsApp başlatılamadı:", error.message || error);
+  console.error("Oturum klasörü korunuyor; tekrar npm start çalıştırabilirsiniz.");
+  process.exitCode = 1;
+});
