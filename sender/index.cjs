@@ -8,11 +8,12 @@ if (fs.existsSync(envFile)) {
   }
 }
 const { createScheduler } = require("./schedule.cjs");
-const { createWhatsAppClient, listGroups, sendGroup } = require("./whatsapp.cjs");
+const { createWhatsAppClient, findGroupByName, listGroups, sendGroup } = require("./whatsapp.cjs");
 
 const siteUrl = process.env.SITE_URL;
 const agentSecret = process.env.AGENT_SECRET;
-const groupId = process.env.WHATSAPP_GROUP_ID;
+let groupId = process.env.WHATSAPP_GROUP_ID || "";
+const groupName = process.env.WHATSAPP_GROUP_NAME || "";
 if (!siteUrl || !agentSecret) throw new Error("SITE_URL ve AGENT_SECRET gerekli.");
 
 async function api(path, options = {}) {
@@ -25,7 +26,7 @@ async function api(path, options = {}) {
 const client = createWhatsAppClient({
   sessionPath: process.env.WHATSAPP_SESSION_PATH || "./data/whatsapp",
   onQr: () => console.log("QR kodu WhatsApp > Bağlı cihazlar > Cihaz bağla menüsünden okutun."),
-  onState: async (state, detail) => { console.log("WhatsApp:", state, detail || ""); await api("/api/agent/heartbeat", { method: "POST", body: JSON.stringify({ connected: state === "ready", groupName: groupId || undefined }) }).catch(() => {}); },
+  onState: async (state, detail) => { console.log("WhatsApp:", state, detail || ""); await api("/api/agent/heartbeat", { method: "POST", body: JSON.stringify({ connected: state === "ready", groupName: groupName || groupId || undefined }) }).catch(() => {}); },
 });
 
 const scheduler = createScheduler({
@@ -38,9 +39,19 @@ const scheduler = createScheduler({
 client.once("ready", async () => {
   if (!groupId) {
     const groups = await listGroups(client);
+    if (groupName) {
+      const selected = findGroupByName(groups, groupName);
+      if (selected) {
+        groupId = selected.id;
+        console.log("Hedef grup seçildi:", selected.name, "(", selected.id, ")");
+      }
+    }
+  }
+  if (!groupId) {
+    const groups = await listGroups(client);
     console.log("WHATSAPP_GROUP_ID ayarlı değil. Bulunan gruplar:");
     groups.forEach((group) => console.log(group.id, "—", group.name));
-    console.log("Bir grubu seçip sender/.env içine WHATSAPP_GROUP_ID olarak ekleyin, sonra yeniden başlatın.");
+    console.log("sender/.env içine WHATSAPP_GROUP_NAME olarak tam grup adını yazın.");
     return;
   }
   console.log("Gönderici hazır; dört saatlik dilimler izleniyor.");

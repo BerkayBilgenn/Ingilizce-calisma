@@ -7,4 +7,5 @@ data/
 sender/node_modules/
 sender/data/
 sender/.env
+sender/.wwebjs_cache/
 *.tsbuildinfo
