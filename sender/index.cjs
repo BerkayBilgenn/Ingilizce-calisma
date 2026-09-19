@@ -10,6 +10,15 @@ if (fs.existsSync(envFile)) {
 const { createScheduler } = require("./schedule.cjs");
 const { createWhatsAppClient, findGroupByName, listGroups, sendGroup } = require("./whatsapp.cjs");
 
+function persistGroupId(id) {
+  if (!fs.existsSync(envFile)) return;
+  const lines = fs.readFileSync(envFile, "utf8").split(/\r?\n/);
+  const index = lines.findIndex((line) => line.startsWith("WHATSAPP_GROUP_ID="));
+  if (index === -1) lines.push(`WHATSAPP_GROUP_ID=${id}`);
+  else lines[index] = `WHATSAPP_GROUP_ID=${id}`;
+  fs.writeFileSync(envFile, lines.filter((line, i, all) => i < all.length - 1 || line !== "").join("\n"));
+}
+
 const siteUrl = process.env.SITE_URL;
 const agentSecret = process.env.AGENT_SECRET;
 let groupId = process.env.WHATSAPP_GROUP_ID || "";
@@ -37,18 +46,25 @@ const scheduler = createScheduler({
 });
 
 client.once("ready", async () => {
+  let groups = [];
   if (!groupId) {
-    const groups = await listGroups(client);
+    try {
+      groups = await listGroups(client);
+    } catch (error) {
+      console.error("WhatsApp grup listesi okunamadı:", error.message || error);
+      console.error("Oturum açık kaldı; sender/.env içine WHATSAPP_GROUP_ID ekleyerek devam edebilirsiniz.");
+      return;
+    }
     if (groupName) {
       const selected = findGroupByName(groups, groupName);
       if (selected) {
         groupId = selected.id;
+        persistGroupId(groupId);
         console.log("Hedef grup seçildi:", selected.name, "(", selected.id, ")");
       }
     }
   }
   if (!groupId) {
-    const groups = await listGroups(client);
     console.log("WHATSAPP_GROUP_ID ayarlı değil. Bulunan gruplar:");
     groups.forEach((group) => console.log(group.id, "—", group.name));
     console.log("sender/.env içine WHATSAPP_GROUP_NAME olarak tam grup adını yazın.");

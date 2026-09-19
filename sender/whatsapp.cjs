@@ -12,8 +12,42 @@ function createWhatsAppClient({ sessionPath = "./data/whatsapp", onState = () =>
 }
 
 async function listGroups(client) {
-  const chats = await client.getChats();
-  return chats.filter((chat) => chat.isGroup).map((chat) => ({ id: chat.id._serialized, name: chat.name }));
+  try {
+    const chats = await client.getChats();
+    return chats.filter((chat) => chat.isGroup).map((chat) => ({ id: chat.id._serialized, name: chat.name }));
+  } catch (error) {
+    // WhatsApp Web occasionally changes its internal serializers before
+    // whatsapp-web.js catches up. In that case getChats() throws a minified
+    // browser error even though the session is ready. Read only the small
+    // fields needed for group selection directly from the live collection.
+    if (!client.pupPage) throw error;
+    console.warn("WhatsApp grup listesi standart API ile okunamadı; doğrudan oturum verisi deneniyor.");
+    try {
+      const groups = await client.pupPage.evaluate(() => {
+        const collection = window.require("WAWebCollections").Chat;
+        const models = collection.getModelsArray();
+        return models.map((chat) => {
+          let id = "";
+          let name = "";
+          let isGroup = false;
+          try {
+            const wid = chat.id;
+            id = wid?._serialized || (wid?.user && wid?.server ? `${wid.user}@${wid.server}` : "");
+            isGroup = Boolean(id && id.endsWith("@g.us"));
+            if (!isGroup && typeof wid?.isGroup === "function") isGroup = Boolean(wid.isGroup());
+          } catch {}
+          try {
+            name = String(chat.formattedTitle || chat.name || chat.subject || "");
+          } catch {}
+          return { id, name, isGroup };
+        }).filter((chat) => chat.isGroup && chat.id && chat.name);
+      });
+      return groups;
+    } catch (fallbackError) {
+      fallbackError.cause = error;
+      throw fallbackError;
+    }
+  }
 }
 
 function findGroupByName(groups, name) {
