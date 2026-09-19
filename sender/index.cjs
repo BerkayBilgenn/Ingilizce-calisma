@@ -51,6 +51,22 @@ const scheduler = createScheduler({
   complete: (result) => api("/api/agent/complete", { method: "POST", body: JSON.stringify(result) }),
 });
 
+async function sendNow() {
+  const claimed = await api("/api/agent/claim?force=1", { method: "POST" });
+  if (!claimed.message) {
+    console.log("Şu anda gönderilecek aktif kelime yok.");
+    return;
+  }
+  try {
+    const result = await sendGroup(client, groupId, claimed.message);
+    await api("/api/agent/complete", { method: "POST", body: JSON.stringify({ slotKey: claimed.slotKey, status: "sent", messageId: result.messageId }) });
+    console.log("Tek seferlik deneme mesajı gönderildi.");
+  } catch (error) {
+    await api("/api/agent/complete", { method: "POST", body: JSON.stringify({ slotKey: claimed.slotKey, status: "uncertain", error: error instanceof Error ? error.message : String(error) }) }).catch(() => {});
+    throw error;
+  }
+}
+
 client.once("ready", async () => {
   let groups = [];
   if (!groupId) {
@@ -77,6 +93,10 @@ client.once("ready", async () => {
     return;
   }
   console.log("Gönderici hazır; dört saatlik dilimler izleniyor.");
+  if (process.env.SEND_NOW === "1") {
+    try { await sendNow(); }
+    catch (error) { console.error("Tek seferlik mesaj gönderilemedi:", error.message || error); }
+  }
   scheduler.start();
 });
 

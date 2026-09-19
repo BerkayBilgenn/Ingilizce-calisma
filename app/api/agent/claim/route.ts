@@ -6,7 +6,8 @@ import { readyDb, secureMatch } from "@/lib/server";
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!secureMatch(auth, process.env.AGENT_SECRET)) return NextResponse.json({ error: "Yetkisiz." }, { status: 401 });
-  const key = slotKey(new Date());
+  const force = request.nextUrl.searchParams.get("force") === "1";
+  const key = force ? `manual-${Date.now()}` : slotKey(new Date());
   if (!key) return NextResponse.json({ skip: true, reason: "slot_closed" });
   const db = await readyDb();
   const message = formatMessage(await buildSnapshot(db, istanbulDay(new Date())));
