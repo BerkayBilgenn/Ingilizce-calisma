@@ -6,7 +6,7 @@
 
 1. Node.js 20 veya üzeri kurulu olsun.
 2. .env.example dosyasını .env.local olarak kopyalayın ve en az SESSION_SECRET ile SETUP_SECRET değerlerini değiştirin.
-3. npm install ve npm run dev çalıştırın.
+3. npm install ve npm run dev çalıştırın. 3000 portu doluysa `npm run dev -- --port 3001` kullanın.
 4. http://localhost:3000 adresinde ilk kurulum anahtarını, iki kişiyi ve isterseniz kelimeleri girin.
 
 Kelime biçimi her satırda İngilizce = Türkçe şeklindedir. Sonraki listeler, admin hesabı giriş yaptıktan sonra aktif turun bitmesini bekler.
@@ -20,7 +20,7 @@ Vercel'de projeye Marketplace üzerinden Turso/libSQL veya başka bir kalıcı S
 Gönderim için birinci telefonun WhatsApp hesabı gerçek QR bağlantısıyla Mac'e bağlanır. Bu işlem gönderici hesabın WhatsApp Web oturumunu kullanır; numara taklidi yapılmaz.
 
 1. sender klasöründe npm install çalıştırın.
-2. sender/.env.example dosyasını sender/.env olarak kopyalayın. SITE_URL ve AGENT_SECRET değerlerini doldurun.
+2. sender/.env.example dosyasını sender/.env olarak kopyalayın. SITE_URL değerini web uygulamasının portuyla aynı yapın (ör. `http://127.0.0.1:3001`) ve AGENT_SECRET değerini doldurun.
 3. npm start çalıştırın. Terminalde çıkan QR kodu birinci telefonda WhatsApp → Bağlı cihazlar → Cihaz bağla menüsünden okutun.
 4. `WHATSAPP_GROUP_NAME=Kalan İngilizce Kelimeler` olarak bırakın. Gönderici grup adını otomatik bulur ve bulduğu kimliği `sender/.env` içine kaydeder. Aynı adla birden fazla grup varsa veya WhatsApp Web grup listesini veremezse terminalde listelenen kimliği `WHATSAPP_GROUP_ID` olarak ekleyip yeniden başlatabilirsiniz.
 

@@ -21,5 +21,13 @@ const { createScheduler } = require("./schedule.cjs");
   });
   assert.deepEqual(await uncertain.tick(), { uncertain: true });
   assert.equal(completeResult.status, "uncertain");
+
+  const unavailable = createScheduler({
+    now: () => new Date(),
+    claim: async () => { throw new Error("SITE_URL yanlış"); },
+    send: async () => { throw new Error("gönderilmemeli"); },
+    complete: async () => { throw new Error("tamamlanmamalı"); },
+  });
+  assert.deepEqual(await unavailable.tick(), { failed: true, error: "SITE_URL yanlış" });
   console.log("sender schedule tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

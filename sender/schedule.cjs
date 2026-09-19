@@ -1,7 +1,12 @@
 function createScheduler({ now, claim, send, complete, intervalMs = 30000 }) {
   let timer;
   async function tick() {
-    const claimed = await claim();
+    let claimed;
+    try {
+      claimed = await claim();
+    } catch (error) {
+      return { failed: true, error: error instanceof Error ? error.message : String(error) };
+    }
     if (!claimed || claimed.skip) return { skipped: true };
     try {
       const result = await send(claimed.message);

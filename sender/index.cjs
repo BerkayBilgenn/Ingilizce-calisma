@@ -27,7 +27,13 @@ if (!siteUrl || !agentSecret) throw new Error("SITE_URL ve AGENT_SECRET gerekli.
 
 async function api(path, options = {}) {
   const response = await fetch(siteUrl.replace(/\/$/, "") + path, { ...options, headers: { authorization: "Bearer " + agentSecret, "content-type": "application/json", ...(options.headers || {}) } });
-  const data = await response.json();
+  const body = await response.text();
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(`SITE_URL API yerine HTML döndürdü (${response.status}). Kelime uygulamasının portunu kontrol edin: ${siteUrl}`);
+  }
   if (!response.ok) throw new Error(data.error || "Site isteği başarısız.");
   return data;
 }
