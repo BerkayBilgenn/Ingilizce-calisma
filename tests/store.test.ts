@@ -1,0 +1,61 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createDb, ensureSchema } from "../lib/db";
+import { authenticate, createInitialSetup, createSet, getDashboard, setDailyCheck } from "../lib/store";
+
+const directories: string[] = [];
+afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+
+async function database() {
+  const dir = mkdtempSync(join(tmpdir(), "kelime-store-"));
+  directories.push(dir);
+  const db = createDb(`file:${join(dir, "test.db")}`);
+  await ensureSchema(db);
+  return db;
+}
+
+const people = [
+  { phone: "0537 000 00 00", name: "Ada", pin: "123456" },
+  { phone: "0532 000 00 00", name: "Deniz", pin: "654321" },
+];
+
+describe("two-person study state", () => {
+  it("allows initial setup only once and authenticates each phone", async () => {
+    const db = await database();
+    await createInitialSetup(db, people);
+    await expect(createInitialSetup(db, people)).rejects.toThrow();
+    expect((await authenticate(db, "0537 000 00 00", "123456"))?.name).toBe("Ada");
+    expect(await authenticate(db, "0537 000 00 00", "654321")).toBeNull();
+    expect(await authenticate(db, "0533 000 00 00", "123456")).toBeNull();
+    db.close();
+  });
+
+  it("keeps daily checks separate and brings cards back tomorrow", async () => {
+    const db = await database();
+    const [adminId, memberId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }, { term: "book", meaning: "kitap" }], "2026-09-20");
+    const first = await getDashboard(db, adminId, "2026-09-20");
+    expect(first.remaining).toBe(2);
+    await setDailyCheck(db, adminId, first.words[0].id, true, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(1);
+    expect((await getDashboard(db, memberId, "2026-09-20")).remaining).toBe(2);
+    expect((await getDashboard(db, adminId, "2026-09-21")).remaining).toBe(2);
+    expect((await getDashboard(db, adminId, "2026-09-27")).set).toBeNull();
+    await setDailyCheck(db, adminId, first.words[0].id, false, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(2);
+    db.close();
+  });
+
+  it("rejects checks outside the active set and overlapping sets", async () => {
+    const db = await database();
+    const [adminId, memberId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    await expect(createSet(db, adminId, [{ term: "book", meaning: "kitap" }], "2026-09-21")).rejects.toThrow();
+    await expect(createSet(db, memberId, [{ term: "book", meaning: "kitap" }], "2026-09-27")).rejects.toThrow();
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+    await expect(setDailyCheck(db, memberId, wordId, true, "2026-09-27")).rejects.toThrow();
+    db.close();
+  });
+});
