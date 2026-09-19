@@ -22,6 +22,15 @@ function request(path: string, data: unknown, cookie?: string): NextRequest {
   });
 }
 
+function formRequest(path: string, values: Record<string, string>): NextRequest {
+  const form = new URLSearchParams(values);
+  return new NextRequest(`http://localhost:3000${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+}
+
 it("protects setup and derives check identity from the login cookie", async () => {
   directory = mkdtempSync(join(tmpdir(), "kelime-api-"));
   process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
@@ -58,4 +67,21 @@ it("protects setup and derives check identity from the login cookie", async () =
   expect((await getDashboard(db, 1, day)).remaining).toBe(1);
   expect((await getDashboard(db, 2, day)).remaining).toBe(0);
   db.close();
+});
+
+it("supports a native form fallback when client hydration is unavailable", async () => {
+  directory = mkdtempSync(join(tmpdir(), "kelime-api-form-"));
+  process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
+  process.env.SETUP_SECRET = "setup-secret-for-test";
+  process.env.SESSION_SECRET = "session-secret-for-test-long-enough";
+  const setup = await import("../app/api/setup/route");
+  const response = await setup.POST(formRequest("/api/setup", {
+    secret: process.env.SETUP_SECRET,
+    name1: "Ada", phone1: "0537 000 00 00", pin1: "123456",
+    name2: "Deniz", phone2: "0532 000 00 00", pin2: "654321",
+    words: "apple = elma",
+  }));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe("http://localhost:3000/");
+  expect(response.headers.get("set-cookie")).toContain("session=");
 });
