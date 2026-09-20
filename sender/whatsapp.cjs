@@ -62,9 +62,16 @@ function findGroupByName(groups, name) {
 }
 
 async function sendGroup(client, groupId, text) {
+  const startedAt = Math.floor(Date.now() / 1000);
   const message = await client.sendMessage(groupId, text);
-  if (!message?.id?._serialized) throw new Error("WhatsApp mesaj kimliğini döndürmedi; gönderim durumu belirsiz. Aynı mesaj otomatik tekrar edilmeyecek.");
-  return { messageId: message.id._serialized };
+  if (message?.id?._serialized) return { messageId: message.id._serialized };
+  try {
+    const chat = await client.getChatById?.(groupId);
+    const recent = await chat?.fetchMessages({ limit: 20 });
+    const confirmed = recent?.find((item) => item.fromMe && item.body === text && item.timestamp >= startedAt && item.id?._serialized);
+    if (confirmed) return { messageId: confirmed.id._serialized };
+  } catch { /* A failed confirmation must not cause a duplicate send. */ }
+  throw new Error("WhatsApp mesaj kimliğini döndürmedi; gönderim durumu belirsiz. Aynı mesaj otomatik tekrar edilmeyecek.");
 }
 
 module.exports = { createWhatsAppClient, listGroups, findGroupByName, sendGroup };

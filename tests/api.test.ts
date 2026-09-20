@@ -85,3 +85,19 @@ it("supports a native form fallback when client hydration is unavailable", async
   expect(response.headers.get("location")).toBe("http://localhost:3000/");
   expect(response.headers.get("set-cookie")).toContain("session=");
 });
+
+it("reports a missing session secret as a configuration error during login", async () => {
+  directory = mkdtempSync(join(tmpdir(), "kelime-api-secret-"));
+  process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
+  process.env.SETUP_SECRET = "setup-secret-for-test";
+  const setup = await import("../app/api/setup/route");
+  const login = await import("../app/api/login/route");
+  const people = [
+    { phone: "0537 000 00 00", name: "Ada", pin: "123456" },
+    { phone: "0532 000 00 00", name: "Deniz", pin: "654321" },
+  ];
+  expect((await setup.POST(request("/api/setup", { people, secret: process.env.SETUP_SECRET }))).status).toBe(200);
+  const response = await login.POST(request("/api/login", { phone: people[0].phone, pin: people[0].pin }));
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({ error: "Vercel ayarlarında SESSION_SECRET eksik veya çok kısa." });
+});

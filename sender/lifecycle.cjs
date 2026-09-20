@@ -18,4 +18,10 @@ function watchBrowser(client, onLost) {
   browser.once("disconnected", () => lost("WhatsApp tarayıcısı kapandı."));
   page.once("close", () => lost("WhatsApp sayfası kapandı."));
 }
-module.exports = { watchBrowser };
+
+function startStartupWatchdog(timeoutMs, onTimeout) {
+  const timer = setTimeout(onTimeout, timeoutMs);
+  return () => clearTimeout(timer);
+}
+
+module.exports = { watchBrowser, startStartupWatchdog };

@@ -9,7 +9,7 @@ if (fs.existsSync(envFile)) {
 }
 const { createScheduler } = require("./schedule.cjs");
 const { createWhatsAppClient, findGroupByName, listGroups, sendGroup } = require("./whatsapp.cjs");
-const { watchBrowser } = require("./lifecycle.cjs");
+const { watchBrowser, startStartupWatchdog } = require("./lifecycle.cjs");
 const { createManualTrigger } = require("./manual.cjs");
 
 function persistGroupId(id) {
@@ -134,8 +134,14 @@ async function initializeWithRetry() {
   }
 }
 
-initializeWithRetry().catch((error) => {
+const stopStartupWatchdog = startStartupWatchdog(5 * 60_000, () => {
+  console.error("WhatsApp başlatma süresi doldu; servis yeniden başlatılacak.");
+  process.exit(1);
+});
+
+initializeWithRetry().then(stopStartupWatchdog).catch((error) => {
+  stopStartupWatchdog();
   console.error("WhatsApp başlatılamadı:", error.message || error);
-  console.error("Oturum klasörü korunuyor; tekrar npm start çalıştırabilirsiniz.");
-  process.exitCode = 1;
+  console.error("Oturum klasörü korunuyor; servis yeniden başlatılacak.");
+  process.exit(1);
 });

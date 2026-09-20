@@ -2,6 +2,6 @@
   "name": "kelime-kartlari-sender",
   "private": true,
   "type": "commonjs",
-  "scripts": { "start": "node index.cjs", "test": "node schedule.test.cjs && node group.test.cjs && node send.test.cjs && node lifecycle.test.cjs && node manual.test.cjs" },
+  "scripts": { "start": "node index.cjs", "test": "node schedule.test.cjs && node group.test.cjs && node send.test.cjs && node lifecycle.test.cjs && node startup.test.cjs && node manual.test.cjs" },
   "dependencies": { "qrcode-terminal": "0.12.0", "whatsapp-web.js": "1.34.7" }
 }
