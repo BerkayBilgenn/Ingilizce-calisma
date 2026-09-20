@@ -108,6 +108,67 @@ export async function createSet(db: Client, adminId: number, inputWords: WordInp
   }
 }
 
+async function editableSet(db: Client, participantId: number, day: string) {
+  const person = await getParticipant(db, participantId);
+  const set = await getLatestSet(db);
+  if (!person || !set || !activeOn(set.startDay, day)) throw new Error("Aktif haftalık liste bulunamadı.");
+  return set;
+}
+
+export async function addActiveWord(db: Client, participantId: number, input: WordInput, day: string): Promise<number> {
+  const set = await editableSet(db, participantId, day);
+  const term = typeof input?.term === "string" ? input.term.trim() : "";
+  const meaning = typeof input?.meaning === "string" ? input.meaning.trim() : "";
+  if (!term || !meaning || term.length > 100 || meaning.length > 300) throw new Error("Kelime ve Türkçesini girin.");
+  const tx = await db.transaction("write");
+  try {
+    const existing = await tx.execute({
+      sql: `SELECT w.id, r.word_id AS removed FROM words w LEFT JOIN word_removals r ON r.word_id = w.id
+            WHERE w.set_id = ? AND lower(w.term) = lower(?) LIMIT 1`,
+      args: [set.id, term],
+    });
+    const row = existing.rows[0];
+    if (row && row.removed === null) throw new Error("Bu kelime listede zaten var.");
+    const count = await tx.execute({ sql: `SELECT COUNT(*) AS count FROM words w LEFT JOIN word_removals r ON r.word_id = w.id WHERE w.set_id = ? AND r.word_id IS NULL`, args: [set.id] });
+    if (Number(count.rows[0].count) >= 100) throw new Error("Haftalık listede en fazla 100 kelime olabilir.");
+    const last = await tx.execute({ sql: "SELECT COALESCE(MAX(position), -1) AS position FROM words WHERE set_id = ?", args: [set.id] });
+    const position = Number(last.rows[0].position) + 1;
+    let id: number;
+    if (row) {
+      id = Number(row.id);
+      await tx.execute({ sql: "UPDATE words SET meaning = ?, position = ? WHERE id = ?", args: [meaning, position, id] });
+      await tx.execute({ sql: "DELETE FROM word_removals WHERE word_id = ?", args: [id] });
+    } else {
+      const result = await tx.execute({ sql: "INSERT INTO words (set_id, term, meaning, position) VALUES (?, ?, ?, ?)", args: [set.id, term, meaning, position] });
+      id = Number(result.lastInsertRowid);
+    }
+    await tx.commit();
+    return id;
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+}
+
+export async function removeActiveWord(db: Client, participantId: number, wordId: number, day: string): Promise<void> {
+  const set = await editableSet(db, participantId, day);
+  if (!Number.isSafeInteger(wordId) || wordId <= 0) throw new Error("Geçersiz kelime.");
+  const tx = await db.transaction("write");
+  try {
+    const result = await tx.execute({
+      sql: `INSERT OR IGNORE INTO word_removals (word_id)
+            SELECT w.id FROM words w WHERE w.id = ? AND w.set_id = ?`,
+      args: [wordId, set.id],
+    });
+    if (Number(result.rowsAffected) !== 1) throw new Error("Kelime aktif listede bulunamadı.");
+    await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE word_id = ? AND status = 'pending'", args: [wordId] });
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+}
+
 export async function getDashboard(db: Client, participantId: number, day: string): Promise<Dashboard> {
   const person = await getParticipant(db, participantId);
   if (!person) throw new Error("Participant not found");
@@ -117,7 +178,7 @@ export async function getDashboard(db: Client, participantId: number, day: strin
     sql: `SELECT w.id, w.term, w.meaning, c.word_id IS NOT NULL AS checked
           FROM words w LEFT JOIN daily_checks c
           ON c.word_id = w.id AND c.participant_id = ? AND c.day = ?
-          WHERE w.set_id = ? ORDER BY w.position`,
+          WHERE w.set_id = ? AND NOT EXISTS (SELECT 1 FROM word_removals r WHERE r.word_id = w.id) ORDER BY w.position`,
     args: [participantId, day, latest.id],
   });
   const words = result.rows.map((row) => ({
@@ -142,14 +203,32 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
   const person = await getParticipant(db, participantId);
   const latest = await getLatestSet(db);
   if (!person || !latest || !activeOn(latest.startDay, day)) throw new Error("No active set");
-  const word = await db.execute({ sql: "SELECT id FROM words WHERE id = ? AND set_id = ?", args: [wordId, latest.id] });
+  const word = await db.execute({ sql: "SELECT id, term FROM words WHERE id = ? AND set_id = ? AND NOT EXISTS (SELECT 1 FROM word_removals WHERE word_id = words.id)", args: [wordId, latest.id] });
   if (!word.rows.length) throw new Error("Word is not in the active set");
-  if (checked) {
-    await db.execute({
-      sql: "INSERT OR IGNORE INTO daily_checks (participant_id, word_id, day, checked_at) VALUES (?, ?, ?, ?)",
-      args: [participantId, wordId, day, new Date().toISOString()],
-    });
-  } else {
-    await db.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+  const tx = await db.transaction("write");
+  try {
+    if (checked) {
+      const result = await tx.execute({
+        sql: "INSERT OR IGNORE INTO daily_checks (participant_id, word_id, day, checked_at) VALUES (?, ?, ?, ?)",
+        args: [participantId, wordId, day, new Date().toISOString()],
+      });
+      if (Number(result.rowsAffected) === 1) {
+        const message = `📚 ${person.name} “${String(word.rows[0].term)}” kelimesini ezberledi.`;
+        await tx.execute({
+          sql: `INSERT INTO learning_notices (participant_id, word_id, day, message, status) VALUES (?, ?, ?, ?, 'pending')
+                ON CONFLICT(participant_id, word_id, day) DO UPDATE SET
+                status = CASE WHEN learning_notices.status = 'cancelled' THEN 'pending' ELSE learning_notices.status END,
+                created_at = CASE WHEN learning_notices.status = 'cancelled' THEN CURRENT_TIMESTAMP ELSE learning_notices.created_at END`,
+          args: [participantId, wordId, day, message],
+        });
+      }
+    } else {
+      await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+      await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND status = 'pending'", args: [participantId, wordId, day] });
+    }
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
   }
 }

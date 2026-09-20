@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ensureSchema } from "../lib/db";
-import { authenticate, createInitialSetup, createSet, getDashboard, setDailyCheck } from "../lib/store";
+import { addActiveWord, authenticate, createInitialSetup, createSet, getDashboard, removeActiveWord, setDailyCheck } from "../lib/store";
 
 const directories: string[] = [];
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -56,6 +56,57 @@ describe("two-person study state", () => {
     await expect(createSet(db, memberId, [{ term: "book", meaning: "kitap" }], "2026-09-27")).rejects.toThrow();
     const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
     await expect(setDailyCheck(db, memberId, wordId, true, "2026-09-27")).rejects.toThrow();
+    db.close();
+  });
+
+  it("lets either participant edit the shared active list without erasing past checks", async () => {
+    const db = await database();
+    const [adminId, memberId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    const addedId = await addActiveWord(db, memberId, { term: "book", meaning: "kitap" }, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words.map((word) => word.term)).toEqual(["apple", "book"]);
+    await setDailyCheck(db, adminId, addedId, true, "2026-09-20");
+    await removeActiveWord(db, adminId, addedId, "2026-09-20");
+    expect((await getDashboard(db, memberId, "2026-09-20")).words.map((word) => word.term)).toEqual(["apple"]);
+    const history = await db.execute({ sql: "SELECT COUNT(*) AS count FROM daily_checks WHERE word_id = ?", args: [addedId] });
+    expect(Number(history.rows[0].count)).toBe(1);
+    expect(await addActiveWord(db, memberId, { term: "book", meaning: "kitap" }, "2026-09-20")).toBe(addedId);
+    expect((await getDashboard(db, memberId, "2026-09-20")).words.map((word) => word.term)).toEqual(["apple", "book"]);
+    db.close();
+  });
+
+  it("rejects duplicate words and edits after the seven-day set ends", async () => {
+    const db = await database();
+    const [adminId, memberId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    await expect(addActiveWord(db, memberId, { term: "APPLE", meaning: "elma" }, "2026-09-20")).rejects.toThrow(/zaten/i);
+    await expect(addActiveWord(db, memberId, { term: "book", meaning: "kitap" }, "2026-09-27")).rejects.toThrow(/aktif/i);
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+    await expect(removeActiveWord(db, memberId, wordId, "2026-09-27")).rejects.toThrow(/aktif/i);
+    db.close();
+  });
+
+  it("queues one learning notice, cancels it on undo, and restores it on recheck", async () => {
+    const db = await database();
+    const [adminId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    let result = await db.execute("SELECT message, status FROM learning_notices");
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].message).toBe("📚 Ada “apple” kelimesini ezberledi.");
+    expect(result.rows[0].status).toBe("pending");
+    await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
+    result = await db.execute("SELECT status FROM learning_notices");
+    expect(result.rows[0].status).toBe("cancelled");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    result = await db.execute("SELECT status FROM learning_notices");
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].status).toBe("pending");
+    await removeActiveWord(db, adminId, wordId, "2026-09-20");
+    result = await db.execute("SELECT status FROM learning_notices");
+    expect(result.rows[0].status).toBe("cancelled");
     db.close();
   });
 });

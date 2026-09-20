@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { createScheduler } = require("./schedule.cjs");
+const { claimPath, createScheduler } = require("./schedule.cjs");
 
 (async () => {
   const calls = [];
@@ -58,5 +58,24 @@ const { createScheduler } = require("./schedule.cjs");
   currentTime = new Date("2026-09-20T21:00:00Z");
   assert.deepEqual(await deferred.tick(), { skipped: true });
   assert.equal(claims, 1, "next slot must resume automatically");
+  assert.equal(claimPath(new Date("2026-09-20T18:30:00Z"), Date.parse("2026-09-20T21:00:00Z")), "/api/agent/claim?noticesOnly=1");
+  assert.equal(claimPath(new Date("2026-09-20T21:00:00Z"), Date.parse("2026-09-20T21:00:00Z")), "/api/agent/claim");
+
+  const releaseSends = [];
+  let overlappingClaims = 0;
+  const serial = createScheduler({
+    now: () => new Date(),
+    claim: async () => { overlappingClaims += 1; return { slotKey: `notice-${overlappingClaims}`, message: "öğrenildi" }; },
+    send: () => new Promise((resolve) => { releaseSends.push(resolve); }),
+    complete: async () => {},
+  });
+  const firstSend = serial.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  const secondSend = serial.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(overlappingClaims, 1, "a second poll must not start while WhatsApp is sending");
+  assert.deepEqual(await secondSend, { skipped: true });
+  releaseSends[0]({ messageId: "wa-1" });
+  assert.deepEqual(await firstSend, { sent: true });
   console.log("sender schedule tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

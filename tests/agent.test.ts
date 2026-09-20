@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ensureSchema } from "../lib/db";
-import { claimSlot, formatMessage, slotKey } from "../lib/agent";
+import { claimLearningNotice, claimSlot, completeLearningNotice, formatMessage, slotKey } from "../lib/agent";
 
 describe("four-hour reminder slots", () => {
   it("uses the current Istanbul four-hour slot after a late restart", () => {
@@ -31,6 +31,26 @@ describe("four-hour reminder slots", () => {
     await ensureSchema(db);
     expect(await claimSlot(db, "2026-09-20-12", "message")).toBe(true);
     expect(await claimSlot(db, "2026-09-20-12", "message")).toBe(false);
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("claims pending learning notices once and expires old notices", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "kelime-notice-"));
+    const db = createDb(`file:${join(directory, "test.db")}`);
+    await ensureSchema(db);
+    await db.execute({ sql: "INSERT INTO participants (phone, name, pin_hash, role) VALUES (?, ?, ?, ?)", args: ["+905370000000", "Ada", "hash", "admin"] });
+    await db.execute({ sql: "INSERT INTO sets (start_day) VALUES (?)", args: ["2026-09-20"] });
+    await db.execute({ sql: "INSERT INTO words (set_id, term, meaning, position) VALUES (1, ?, ?, 0)", args: ["apple", "elma"] });
+    await db.execute({ sql: "INSERT INTO learning_notices (participant_id, word_id, day, message, status, created_at) VALUES (1, 1, ?, ?, 'pending', ?)", args: ["2026-09-20", "old", "2026-09-20 11:00:00"] });
+    await db.execute({ sql: "INSERT INTO learning_notices (participant_id, word_id, day, message, status, created_at) VALUES (1, 1, ?, ?, 'pending', ?)", args: ["2026-09-21", "new", "2026-09-20 12:00:00"] });
+    const claimed = await claimLearningNotice(db, new Date("2026-09-20T12:05:00Z"));
+    expect(claimed?.message).toBe("new");
+    expect(claimed?.slotKey).toMatch(/^notice-\d+$/);
+    expect(await claimLearningNotice(db, new Date("2026-09-20T12:05:00Z"))).toBeNull();
+    await completeLearningNotice(db, Number(claimed?.slotKey.slice(7)), "sent", "msg-1");
+    const rows = await db.execute("SELECT status FROM learning_notices ORDER BY id");
+    expect(rows.rows.map((row) => row.status)).toEqual(["expired", "sent"]);
     db.close();
     rmSync(directory, { recursive: true, force: true });
   });

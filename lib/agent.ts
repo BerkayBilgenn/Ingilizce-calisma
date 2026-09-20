@@ -47,6 +47,26 @@ export async function claimSlot(db: Client, key: string, message: string | null)
   return Number(result.rowsAffected) === 1;
 }
 
+export async function claimLearningNotice(db: Client, now: Date): Promise<{ slotKey: string; message: string } | null> {
+  const cutoff = new Date(now.getTime() - 30 * 60_000).toISOString().slice(0, 19).replace("T", " ");
+  let pending = await db.execute("SELECT id, message, created_at FROM learning_notices WHERE status = 'pending' ORDER BY created_at, id LIMIT 1");
+  if (pending.rows[0] && String(pending.rows[0].created_at) < cutoff) {
+    await db.execute({ sql: "UPDATE learning_notices SET status = 'expired' WHERE status = 'pending' AND created_at < ?", args: [cutoff] });
+    pending = await db.execute("SELECT id, message, created_at FROM learning_notices WHERE status = 'pending' ORDER BY created_at, id LIMIT 1");
+  }
+  const row = pending.rows[0];
+  if (!row) return null;
+  const result = await db.execute({ sql: "UPDATE learning_notices SET status = 'claimed' WHERE id = ? AND status = 'pending'", args: [row.id] });
+  return Number(result.rowsAffected) === 1 ? { slotKey: `notice-${row.id}`, message: String(row.message) } : null;
+}
+
+export async function completeLearningNotice(db: Client, id: number, status: "sent" | "failed" | "uncertain", messageId?: string, error?: string): Promise<void> {
+  await db.execute({
+    sql: "UPDATE learning_notices SET status = ?, message_id = ?, error = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'claimed'",
+    args: [status, messageId || null, error || null, id],
+  });
+}
+
 export async function completeSlot(db: Client, key: string, status: "sent" | "failed" | "uncertain", messageId?: string, error?: string): Promise<void> {
   await db.execute({ sql: "UPDATE send_runs SET status = ?, message_id = ?, error = ?, completed_at = CURRENT_TIMESTAMP WHERE slot_key = ?", args: [status, messageId || null, error || null, key] });
 }

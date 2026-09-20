@@ -46,6 +46,10 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       position INTEGER NOT NULL,
       UNIQUE(set_id, term)
     )`,
+    `CREATE TABLE IF NOT EXISTS word_removals (
+      word_id INTEGER PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+      removed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
     `CREATE TABLE IF NOT EXISTS daily_checks (
       participant_id INTEGER NOT NULL REFERENCES participants(id),
       word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
@@ -61,6 +65,19 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       error TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       completed_at TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS learning_notices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      participant_id INTEGER NOT NULL REFERENCES participants(id),
+      word_id INTEGER NOT NULL REFERENCES words(id),
+      day TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message_id TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      UNIQUE(participant_id, word_id, day)
     )`,
     `CREATE TABLE IF NOT EXISTS login_attempts (
       phone_hash TEXT PRIMARY KEY,

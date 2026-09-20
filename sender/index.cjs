@@ -7,7 +7,7 @@ if (fs.existsSync(envFile)) {
     if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
   }
 }
-const { createScheduler } = require("./schedule.cjs");
+const { claimPath, createScheduler } = require("./schedule.cjs");
 const { createWhatsAppClient, findGroupByName, listGroups, sendGroup } = require("./whatsapp.cjs");
 const { watchBrowser, startStartupWatchdog } = require("./lifecycle.cjs");
 const { createManualTrigger } = require("./manual.cjs");
@@ -57,10 +57,10 @@ const client = createWhatsAppClient({
 
 const scheduler = createScheduler({
   now: () => new Date(),
-  notBefore: resumeAt,
-  claim: () => api("/api/agent/claim", { method: "POST" }),
+  claim: () => api(claimPath(new Date(), resumeAt), { method: "POST" }),
   send: (message) => sendGroup(client, groupId, message),
   complete: (result) => api("/api/agent/complete", { method: "POST", body: JSON.stringify(result) }),
+  intervalMs: 10000,
   onFailure: (error) => {
     console.error("Hatırlatma gönderilemedi:", error);
     restartIfBrowserBroken(error);
