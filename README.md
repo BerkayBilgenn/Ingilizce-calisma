@@ -13,7 +13,7 @@ Kelime biçimi her satırda İngilizce = Türkçe şeklindedir. Sonraki listeler
 
 ## Vercel
 
-Vercel'de projeye Marketplace üzerinden Turso/libSQL veya başka bir kalıcı SQL sağlayıcısı bağlayın. DATABASE_URL, DATABASE_AUTH_TOKEN, SESSION_SECRET, SETUP_SECRET ve AGENT_SECRET ortam değişkenlerini Vercel Project Settings içine ekleyin. DATABASE_URL Vercel'de file: olamaz. İlk deploydan sonra ana sayfayı açıp kurulumu bir kez tamamlayın.
+Vercel'de projeye Marketplace üzerinden Turso Cloud veritabanı bağlayın. Entegrasyonun eklediği `TURSO_DATABASE_URL` ve `TURSO_AUTH_TOKEN` uygulama tarafından otomatik kullanılır. Ayrıca Vercel Project Settings içinde güçlü `SESSION_SECRET`, `SETUP_SECRET` ve `AGENT_SECRET` değerleri ayarlayın. Önceden eklenmiş boş `DATABASE_URL` ve `DATABASE_AUTH_TOKEN` değerleri Turso ayarlarını engellemez; `DATABASE_URL=file:` ise Vercel'de kullanılamaz. Ortam değişkenlerini ekledikten sonra projeyi yeniden yayınlayın ve ana sayfayı açıp kurulumu bir kez tamamlayın.
 
 ## Mac WhatsApp göndericisi
 

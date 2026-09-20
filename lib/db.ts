@@ -8,12 +8,18 @@ export function createDb(url: string, token?: string): Client {
   return createClient({ url, authToken: token });
 }
 
+export function databaseConfig(env: Record<string, string | undefined>): { url: string; token?: string } {
+  const url = env.DATABASE_URL || env.TURSO_DATABASE_URL || (env.VERCEL ? "" : "file:./data/local.db");
+  if (!url) throw new Error("DATABASE_URL or TURSO_DATABASE_URL is required on Vercel");
+  if (env.VERCEL && url.startsWith("file:")) throw new Error("A persistent database is required on Vercel");
+  return { url, token: env.DATABASE_AUTH_TOKEN || env.TURSO_AUTH_TOKEN };
+}
+
 export function getDb(): Client {
   if (sharedDb) return sharedDb;
-  const url = process.env.DATABASE_URL || (process.env.VERCEL ? "" : "file:./data/local.db");
-  if (!url) throw new Error("DATABASE_URL is required on Vercel");
+  const { url, token } = databaseConfig(process.env);
   if (url.startsWith("file:") && url !== "file::memory:") mkdirSync(dirname(url.slice(5)), { recursive: true });
-  sharedDb = createDb(url, process.env.DATABASE_AUTH_TOKEN);
+  sharedDb = createDb(url, token);
   return sharedDb;
 }
 

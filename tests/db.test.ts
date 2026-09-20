@@ -2,12 +2,25 @@ import { afterEach, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDb, ensureSchema } from "../lib/db";
+import { createDb, databaseConfig, ensureSchema } from "../lib/db";
 
 const directories: string[] = [];
 
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+it("uses Turso credentials injected by Vercel when DATABASE_URL is empty", () => {
+  expect(databaseConfig({
+    VERCEL: "1",
+    DATABASE_URL: "",
+    TURSO_DATABASE_URL: "libsql://study.turso.io",
+    TURSO_AUTH_TOKEN: "token",
+  })).toEqual({ url: "libsql://study.turso.io", token: "token" });
+});
+
+it("rejects local file databases on Vercel", () => {
+  expect(() => databaseConfig({ VERCEL: "1", DATABASE_URL: "file:./data/local.db" })).toThrow(/persistent database/i);
 });
 
 it("creates durable tables and prevents duplicate daily checks", async () => {
