@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Kelime Kartları",
-  description: "İki kişi, yedi gün, her gün kelime tekrarı",
+  title: "İkra & Berkay İngilizce öğreniyor",
+  description: "İkra ve Berkay'ın ortak İngilizce kelime çalışma alanı",
   icons: { icon: "/favicon.svg" },
 };
 
@@ -12,7 +12,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f7f7f2",
+  themeColor: "#5a1830",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
