@@ -1,5 +1,6 @@
-function createScheduler({ now, claim, send, complete, intervalMs = 30000 }) {
+function createScheduler({ now, claim, send, complete, onFailure = (error) => console.error("Hatırlatma gönderilemedi:", error), intervalMs = 30000 }) {
   let timer;
+  let lastFailure;
   async function tick() {
     let claimed;
     try {
@@ -13,10 +14,26 @@ function createScheduler({ now, claim, send, complete, intervalMs = 30000 }) {
       await complete({ slotKey: claimed.slotKey, status: "sent", messageId: result.messageId });
       return { sent: true };
     } catch (error) {
-      await complete({ slotKey: claimed.slotKey, status: "uncertain", error: error instanceof Error ? error.message : String(error) });
-      return { uncertain: true };
+      const message = error instanceof Error ? error.message : String(error);
+      await complete({ slotKey: claimed.slotKey, status: "uncertain", error: message });
+      return { uncertain: true, error: message };
     }
   }
-  return { tick, start() { void tick(); timer = setInterval(() => void tick(), intervalMs); return () => clearInterval(timer); }, now };
+  async function report() {
+    try {
+      const result = await tick();
+      if (result.failed || result.uncertain) {
+        if (result.error !== lastFailure) onFailure(result.error);
+        lastFailure = result.error;
+      } else {
+        lastFailure = undefined;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== lastFailure) onFailure(message);
+      lastFailure = message;
+    }
+  }
+  return { tick, start() { void report(); timer = setInterval(() => void report(), intervalMs); return () => clearInterval(timer); }, now };
 }
 module.exports = { createScheduler };

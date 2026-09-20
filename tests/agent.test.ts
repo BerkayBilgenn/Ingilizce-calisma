@@ -6,9 +6,9 @@ import { createDb, ensureSchema } from "../lib/db";
 import { claimSlot, formatMessage, slotKey } from "../lib/agent";
 
 describe("four-hour reminder slots", () => {
-  it("opens only for the first five minutes of Istanbul slots", () => {
+  it("uses the current Istanbul four-hour slot after a late restart", () => {
     expect(slotKey(new Date("2026-09-20T05:01:00Z"))).toBe("2026-09-20-08");
-    expect(slotKey(new Date("2026-09-20T05:05:00Z"))).toBeNull();
+    expect(slotKey(new Date("2026-09-20T06:37:00Z"))).toBe("2026-09-20-08");
     expect(slotKey(new Date("2026-09-20T21:01:00Z"))).toBe("2026-09-21-00");
   });
 

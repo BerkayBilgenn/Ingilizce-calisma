@@ -7,6 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "local:install": "node ops/local-services.cjs install",
+    "local:send-now": "node ops/send-now.cjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

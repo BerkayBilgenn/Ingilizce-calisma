@@ -19,7 +19,7 @@ const { createScheduler } = require("./schedule.cjs");
     send: async () => { throw new Error("bağlantı koptu"); },
     complete: async (result) => { completeResult = result; },
   });
-  assert.deepEqual(await uncertain.tick(), { uncertain: true });
+  assert.deepEqual(await uncertain.tick(), { uncertain: true, error: "bağlantı koptu" });
   assert.equal(completeResult.status, "uncertain");
 
   const unavailable = createScheduler({
@@ -29,5 +29,19 @@ const { createScheduler } = require("./schedule.cjs");
     complete: async () => { throw new Error("tamamlanmamalı"); },
   });
   assert.deepEqual(await unavailable.tick(), { failed: true, error: "SITE_URL yanlış" });
+
+  const errors = [];
+  const reporting = createScheduler({
+    now: () => new Date(),
+    claim: async () => { throw new Error("site kapalı"); },
+    send: async () => { throw new Error("gönderilmemeli"); },
+    complete: async () => {},
+    onFailure: (error) => errors.push(error),
+    intervalMs: 25,
+  });
+  const stop = reporting.start();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  stop();
+  assert.deepEqual(errors, ["site kapalı"]);
   console.log("sender schedule tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -9,6 +9,8 @@ if (fs.existsSync(envFile)) {
 }
 const { createScheduler } = require("./schedule.cjs");
 const { createWhatsAppClient, findGroupByName, listGroups, sendGroup } = require("./whatsapp.cjs");
+const { watchBrowser } = require("./lifecycle.cjs");
+const { createManualTrigger } = require("./manual.cjs");
 
 function persistGroupId(id) {
   if (!fs.existsSync(envFile)) return;
@@ -24,6 +26,13 @@ const agentSecret = process.env.AGENT_SECRET;
 let groupId = process.env.WHATSAPP_GROUP_ID || "";
 const groupName = process.env.WHATSAPP_GROUP_NAME || "";
 if (!siteUrl || !agentSecret) throw new Error("SITE_URL ve AGENT_SECRET gerekli.");
+
+function restartIfBrowserBroken(error) {
+  if (/detached Frame|Execution context was destroyed|Target closed|Session closed/i.test(String(error))) {
+    console.error("WhatsApp tarayıcısı kullanılamıyor; gönderici yeniden başlatılacak.");
+    process.exit(1);
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(siteUrl.replace(/\/$/, "") + path, { ...options, headers: { authorization: "Bearer " + agentSecret, "content-type": "application/json", ...(options.headers || {}) } });
@@ -49,6 +58,10 @@ const scheduler = createScheduler({
   claim: () => api("/api/agent/claim", { method: "POST" }),
   send: (message) => sendGroup(client, groupId, message),
   complete: (result) => api("/api/agent/complete", { method: "POST", body: JSON.stringify(result) }),
+  onFailure: (error) => {
+    console.error("Hatırlatma gönderilemedi:", error);
+    restartIfBrowserBroken(error);
+  },
 });
 
 async function sendNow() {
@@ -67,7 +80,13 @@ async function sendNow() {
   }
 }
 
+const triggerManual = createManualTrigger(sendNow, (error) => {
+  console.error("Tek seferlik mesaj gönderilemedi:", error.message || error);
+  restartIfBrowserBroken(error);
+});
+
 client.once("ready", async () => {
+  watchBrowser(client, (reason) => { console.error(reason, "Gönderici yeniden başlatılacak."); process.exit(1); });
   let groups = [];
   if (!groupId) {
     try {
@@ -93,10 +112,8 @@ client.once("ready", async () => {
     return;
   }
   console.log("Gönderici hazır; dört saatlik dilimler izleniyor.");
-  if (process.env.SEND_NOW === "1") {
-    try { await sendNow(); }
-    catch (error) { console.error("Tek seferlik mesaj gönderilemedi:", error.message || error); }
-  }
+  process.on("SIGUSR2", () => { void triggerManual(); });
+  if (process.env.SEND_NOW === "1") await triggerManual();
   scheduler.start();
 });
 

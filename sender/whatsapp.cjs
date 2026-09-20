@@ -63,6 +63,7 @@ function findGroupByName(groups, name) {
 
 async function sendGroup(client, groupId, text) {
   const message = await client.sendMessage(groupId, text);
+  if (!message?.id?._serialized) throw new Error("WhatsApp mesaj kimliğini döndürmedi; gönderim durumu belirsiz. Aynı mesaj otomatik tekrar edilmeyecek.");
   return { messageId: message.id._serialized };
 }
 

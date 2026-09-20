@@ -5,11 +5,10 @@ import { getDashboard, getParticipant, getLatestSet, type StudyWord } from "./st
 export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning">[]; learned: Pick<StudyWord, "term" | "meaning">[] }[] };
 
 export function slotKey(date: Date): string | null {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).formatToParts(date);
   const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value);
-  if (minute >= 5 || hour % 4 !== 0) return null;
-  return istanbulDay(date) + "-" + String(hour).padStart(2, "0");
+  if (!Number.isInteger(hour)) return null;
+  return istanbulDay(date) + "-" + String(Math.floor(hour / 4) * 4).padStart(2, "0");
 }
 
 export function formatMessage(snapshot: ReminderSnapshot): string | null {
