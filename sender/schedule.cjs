@@ -1,7 +1,8 @@
-function createScheduler({ now, claim, send, complete, onFailure = (error) => console.error("Hatırlatma gönderilemedi:", error), intervalMs = 30000 }) {
+function createScheduler({ now, claim, send, complete, notBefore = 0, onFailure = (error) => console.error("Hatırlatma gönderilemedi:", error), intervalMs = 30000 }) {
   let timer;
   let lastFailure;
   async function tick() {
+    if (now().getTime() < notBefore) return { skipped: true };
     let claimed;
     try {
       claimed = await claim();

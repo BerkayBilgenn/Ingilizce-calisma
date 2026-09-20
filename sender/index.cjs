@@ -23,9 +23,11 @@ function persistGroupId(id) {
 
 const siteUrl = process.env.SITE_URL;
 const agentSecret = process.env.AGENT_SECRET;
+const resumeAt = process.env.SENDER_RESUME_AT ? Date.parse(process.env.SENDER_RESUME_AT) : 0;
 let groupId = process.env.WHATSAPP_GROUP_ID || "";
 const groupName = process.env.WHATSAPP_GROUP_NAME || "";
 if (!siteUrl || !agentSecret) throw new Error("SITE_URL ve AGENT_SECRET gerekli.");
+if (!Number.isFinite(resumeAt)) throw new Error("SENDER_RESUME_AT geçerli bir zaman olmalı.");
 
 function restartIfBrowserBroken(error) {
   if (/detached Frame|Execution context was destroyed|Target closed|Session closed/i.test(String(error))) {
@@ -50,11 +52,12 @@ async function api(path, options = {}) {
 const client = createWhatsAppClient({
   sessionPath: process.env.WHATSAPP_SESSION_PATH || "./data/whatsapp",
   onQr: () => console.log("QR kodu WhatsApp > Bağlı cihazlar > Cihaz bağla menüsünden okutun."),
-  onState: async (state, detail) => { console.log("WhatsApp:", state, detail || ""); await api("/api/agent/heartbeat", { method: "POST", body: JSON.stringify({ connected: state === "ready", groupName: groupName || groupId || undefined }) }).catch(() => {}); },
+  onState: async (state, detail) => { console.log("WhatsApp:", state, detail || ""); await api("/api/agent/heartbeat", { method: "POST", body: JSON.stringify({ connected: state === "ready", groupName: groupName || groupId || undefined }) }).catch((error) => console.error("Vercel bağlantısı doğrulanamadı:", error.message || error)); },
 });
 
 const scheduler = createScheduler({
   now: () => new Date(),
+  notBefore: resumeAt,
   claim: () => api("/api/agent/claim", { method: "POST" }),
   send: (message) => sendGroup(client, groupId, message),
   complete: (result) => api("/api/agent/complete", { method: "POST", body: JSON.stringify(result) }),

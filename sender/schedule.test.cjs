@@ -43,5 +43,20 @@ const { createScheduler } = require("./schedule.cjs");
   await new Promise((resolve) => setTimeout(resolve, 60));
   stop();
   assert.deepEqual(errors, ["site kapalı"]);
+
+  let currentTime = new Date("2026-09-20T18:30:00Z");
+  let claims = 0;
+  const deferred = createScheduler({
+    now: () => currentTime,
+    notBefore: Date.parse("2026-09-20T21:00:00Z"),
+    claim: async () => { claims += 1; return { skip: true }; },
+    send: async () => { throw new Error("gönderilmemeli"); },
+    complete: async () => {},
+  });
+  assert.deepEqual(await deferred.tick(), { skipped: true });
+  assert.equal(claims, 0, "current uncertain slot must not be claimed again");
+  currentTime = new Date("2026-09-20T21:00:00Z");
+  assert.deepEqual(await deferred.tick(), { skipped: true });
+  assert.equal(claims, 1, "next slot must resume automatically");
   console.log("sender schedule tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
