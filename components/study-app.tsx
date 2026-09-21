@@ -134,7 +134,9 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
   const remaining = words.filter((word) => !word.checked);
   const completed = words.filter((word) => word.checked);
   const dailyPercent = words.length ? Math.round(completed.length / words.length * 100) : 0;
-  const programPercent = initial.set ? Math.round(initial.set.dayNumber / initial.set.durationDays * 100) : 0;
+  const currentDay = initial.set?.dayNumber || 1;
+  const windowStart = Math.min(Math.max(currentDay - 3, 1), 94);
+  const visibleDays = Array.from({ length: 7 }, (_, index) => windowStart + index);
 
   async function changeRepeat(word: StudyWord, increase: boolean) {
     const optimisticCount = Math.max(0, Math.min(3, word.repeatCount + (increase ? 1 : -1)));
@@ -181,13 +183,11 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
       {initial.set ? <>
         <section className="panel progress-panel">
           <div className="progress-top">
-            <div><span className="eyebrow">{initial.set.durationDays} GÜNLÜK YOLCULUK</span><h2>Gün {initial.set.dayNumber} <span>/ {initial.set.durationDays}</span></h2></div>
-            <div className="progress-count"><strong>{completed.length}<span> / {words.length}</span></strong><small>kelimede 3 tekrar tamamlandı</small></div>
+            <div><span className="eyebrow">{initial.set.durationDays} GÜNLÜK YOLCULUK</span><h2>Bugün {initial.set.dayNumber}. gün</h2></div>
+            <div className="progress-count"><strong>{completed.length}<span> / {words.length}</span></strong><small>3 tekrarı tamamlandı</small></div>
           </div>
-          <div className="progress-label"><span>Program ilerlemesi</span><strong>%{programPercent}</strong></div>
-          <div className="progress-track program-progress" role="progressbar" aria-label="100 günlük program ilerlemesi" aria-valuenow={initial.set.dayNumber} aria-valuemin={1} aria-valuemax={initial.set.durationDays}><span style={{ width: `${programPercent}%` }} /></div>
-          <div className="progress-label"><span>Bugünün 10 kelimesi</span><strong>%{dailyPercent}</strong></div>
-          <div className="progress-track daily-progress" role="progressbar" aria-label="Bugün üç tekrarı tamamlanan kelimeler" aria-valuenow={completed.length} aria-valuemin={0} aria-valuemax={words.length}><span style={{ width: `${dailyPercent}%` }} /></div>
+          <div className="progress-track" role="progressbar" aria-label="Bugün üç tekrarı tamamlanan kelimeler" aria-valuenow={completed.length} aria-valuemin={0} aria-valuemax={words.length}><span style={{ width: `${dailyPercent}%` }} /></div>
+          <ol className="day-track">{visibleDays.map((day) => <li key={day} className={day === currentDay ? "current" : day < currentDay ? "past" : "future"}><span>{day < currentDay ? "✓" : day}</span><small>Gün {day}</small></li>)}</ol>
         </section>
 
         <div className="section-heading"><div><span className="eyebrow">SIRADAKİ KARTLAR</span><h2>Bugün kalan kelimeler <b>{remaining.length}</b></h2></div><p>Bir kelime, üç tekrar tamamlanana kadar burada kalır.</p></div>
