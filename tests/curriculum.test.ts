@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { curriculumWords } from "../lib/curriculum";
 
 describe("100-day curriculum", () => {
@@ -14,5 +15,12 @@ describe("100-day curriculum", () => {
   it("preserves the CSV ordering and pronunciation", () => {
     expect(curriculumWords[0]).toMatchObject({ term: "accept", meaning: "kabul etmek", pronunciation: "ık-SEPT", dayNumber: 1, position: 0 });
     expect(curriculumWords[999]).toMatchObject({ term: "wheel", meaning: "tekerlek", pronunciation: "wiil", dayNumber: 100, position: 999 });
+  });
+
+  it("keeps the supplied CSV as the checked-in source", () => {
+    const csv = readFileSync(new URL("../content/ingilizce-1000-kelime.csv", import.meta.url), "utf8");
+    const lines = csv.trim().split(/\r?\n/);
+    expect(lines[0]).toBe("İngilizce,Türkçe,Okunuş,Seviye,Kategori");
+    expect(lines).toHaveLength(1001);
   });
 });

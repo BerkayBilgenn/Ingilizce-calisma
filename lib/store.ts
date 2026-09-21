@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import type { Client } from "@libsql/client";
 import { hashPin, normalizePhone, verifyPin } from "./auth";
 import { activeOn, dayIndex } from "./study";
@@ -89,23 +89,47 @@ export async function getLatestSet(db: Client): Promise<{ id: number; startDay: 
   return row ? { id: rowNumber(row.id), startDay: rowString(row.start_day), durationDays: rowNumber(row.duration_days), programKey: row.program_key === null ? null : rowString(row.program_key) } : null;
 }
 
-export async function activateCurriculum(db: Client, startDay: string): Promise<number> {
-  const existing = await db.execute({ sql: "SELECT id FROM sets WHERE program_key = ?", args: [CURRICULUM_KEY] });
-  if (existing.rows[0]) return rowNumber(existing.rows[0].id);
+type RandomIndex = (upperExclusive: number) => number;
+
+function shuffledCurriculum(randomIndex: RandomIndex) {
+  const words = [...curriculumWords];
+  for (let index = words.length - 1; index > 0; index -= 1) {
+    const selected = randomIndex(index + 1);
+    if (!Number.isInteger(selected) || selected < 0 || selected > index) throw new Error("Random curriculum index is invalid");
+    [words[index], words[selected]] = [words[selected], words[index]];
+  }
+  return words;
+}
+
+export async function activateCurriculum(db: Client, startDay: string, randomIndex: RandomIndex = (upperExclusive) => randomInt(upperExclusive)): Promise<number> {
   const tx = await db.transaction("write");
   try {
-    await tx.execute({ sql: "INSERT OR IGNORE INTO sets (start_day, duration_days, program_key) VALUES (?, ?, ?)", args: [startDay, CURRICULUM_DAYS, CURRICULUM_KEY] });
+    const existing = await tx.execute({ sql: "SELECT id FROM sets WHERE program_key = ?", args: [CURRICULUM_KEY] });
+    if (existing.rows[0]) {
+      const id = rowNumber(existing.rows[0].id);
+      await tx.commit();
+      return id;
+    }
+
+    await tx.execute("DELETE FROM learning_notices");
+    await tx.execute("DELETE FROM daily_checks");
+    await tx.execute("DELETE FROM word_removals");
+    await tx.execute("DELETE FROM send_runs");
+    await tx.execute("DELETE FROM words");
+    await tx.execute("DELETE FROM sets");
+    await tx.execute({ sql: "INSERT INTO sets (start_day, duration_days, program_key) VALUES (?, ?, ?)", args: [startDay, CURRICULUM_DAYS, CURRICULUM_KEY] });
     const setResult = await tx.execute({ sql: "SELECT id FROM sets WHERE program_key = ?", args: [CURRICULUM_KEY] });
     const setId = rowNumber(setResult.rows[0].id);
-    const count = await tx.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [setId] });
-    if (rowNumber(count.rows[0].count) === 0) {
-      for (let offset = 0; offset < curriculumWords.length; offset += 100) {
-        await tx.batch(curriculumWords.slice(offset, offset + 100).map((word) => ({
+    const shuffled = shuffledCurriculum(randomIndex);
+    for (let offset = 0; offset < shuffled.length; offset += 100) {
+      await tx.batch(shuffled.slice(offset, offset + 100).map((word, batchIndex) => {
+        const position = offset + batchIndex;
+        return {
           sql: `INSERT INTO words (set_id, term, meaning, pronunciation, level, category, scheduled_day, position)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [setId, word.term, word.meaning, word.pronunciation, word.level, word.category, word.dayNumber, word.position],
-        })));
-      }
+          args: [setId, word.term, word.meaning, word.pronunciation, word.level, word.category, Math.floor(position / 10) + 1, position],
+        };
+      }));
     }
     const finalCount = await tx.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [setId] });
     if (rowNumber(finalCount.rows[0].count) !== curriculumWords.length) throw new Error("Curriculum import is incomplete");

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { activeOn, dayIndex, istanbulDay } from "../lib/study";
+import { activeOn, dayIndex, istanbulDay, millisecondsUntilNextIstanbulDay } from "../lib/study";
 
 describe("Istanbul study days", () => {
   it("changes day at Istanbul midnight", () => {
     expect(istanbulDay(new Date("2026-09-20T20:59:59Z"))).toBe("2026-09-20");
     expect(istanbulDay(new Date("2026-09-20T21:00:00Z"))).toBe("2026-09-21");
+  });
+
+  it("calculates the refresh delay to the next Istanbul midnight", () => {
+    expect(millisecondsUntilNextIstanbulDay(new Date("2026-09-20T20:59:59.500Z"))).toBe(500);
+    expect(millisecondsUntilNextIstanbulDay(new Date("2026-09-20T21:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
   });
 
   it("counts exactly seven active calendar days", () => {

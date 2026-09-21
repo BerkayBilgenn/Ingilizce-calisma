@@ -61,16 +61,77 @@ function findGroupByName(groups, name) {
   return groups.find((group) => group.name.trim().toLocaleLowerCase("tr-TR") === normalized) || null;
 }
 
-async function sendGroup(client, groupId, text) {
+function serializedId(value) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  return value._serialized || value.$1 || (value.user && value.server ? `${value.user}@${value.server}` : "");
+}
+
+function outgoingMatch(item, groupId, text, startedAt) {
+  if (!item?.fromMe || item.body !== text || Number(item.timestamp || 0) < startedAt - 2) return false;
+  const destination = serializedId(item.to) || serializedId(item.id?.remote);
+  return !destination || destination === groupId;
+}
+
+function outgoingWatcher(client, groupId, text, startedAt, timeoutMs) {
+  if (typeof client.on !== "function" || typeof client.off !== "function") return { promise: Promise.resolve(null), stop() {} };
+  let finish;
+  const promise = new Promise((resolve) => {
+    const handler = (item) => {
+      if (outgoingMatch(item, groupId, text, startedAt)) finish(item);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    finish = (item) => {
+      clearTimeout(timer);
+      client.off("message_create", handler);
+      resolve(item);
+    };
+    client.on("message_create", handler);
+  });
+  return { promise, stop() { finish(null); } };
+}
+
+function confirmedMessage(item) {
+  if (!item) return null;
+  const id = serializedId(item.id);
+  return { messageId: id || `confirmed-${item.timestamp || Date.now()}` };
+}
+
+async function sendGroup(client, groupId, text, {
+  confirmTimeoutMs = 15000,
+  confirmAttempts = 6,
+  confirmIntervalMs = 1000,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+} = {}) {
   const startedAt = Math.floor(Date.now() / 1000);
-  const message = await client.sendMessage(groupId, text);
-  if (message?.id?._serialized) return { messageId: message.id._serialized };
+  const watcher = outgoingWatcher(client, groupId, text, startedAt, confirmTimeoutMs);
+  let message;
+  let sendError;
   try {
-    const chat = await client.getChatById?.(groupId);
-    const recent = await chat?.fetchMessages({ limit: 20 });
-    const confirmed = recent?.find((item) => item.fromMe && item.body === text && item.timestamp >= startedAt && item.id?._serialized);
-    if (confirmed) return { messageId: confirmed.id._serialized };
-  } catch { /* A failed confirmation must not cause a duplicate send. */ }
+    message = await client.sendMessage(groupId, text);
+  } catch (error) {
+    sendError = error;
+  }
+  const returned = confirmedMessage(message);
+  if (returned) {
+    watcher.stop();
+    return returned;
+  }
+  const eventMessage = confirmedMessage(await watcher.promise);
+  if (eventMessage) return eventMessage;
+  if (typeof client.getChatById === "function") {
+    for (let attempt = 0; attempt < confirmAttempts; attempt += 1) {
+      try {
+        const chat = await client.getChatById(groupId);
+        const recent = await chat?.fetchMessages({ limit: 30 });
+        const confirmed = recent?.find((item) => outgoingMatch(item, groupId, text, startedAt));
+        const result = confirmedMessage(confirmed);
+        if (result) return result;
+      } catch { /* Keep checking: WhatsApp Web may still be updating its local chat model. */ }
+      if (attempt + 1 < confirmAttempts) await sleep(confirmIntervalMs);
+    }
+  }
+  if (sendError) throw sendError;
   throw new Error("WhatsApp mesaj kimliğini döndürmedi; gönderim durumu belirsiz. Aynı mesaj otomatik tekrar edilmeyecek.");
 }
 

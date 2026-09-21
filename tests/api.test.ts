@@ -154,13 +154,14 @@ it("offers a new learning notice to the sender before a two-hour reminder", asyn
   const { getDashboard } = await import("../lib/store");
   const { istanbulDay } = await import("../lib/study");
   const db = getDb();
-  const wordId = (await getDashboard(db, 1, istanbulDay(new Date()))).words[0].id;
+  const selectedWord = (await getDashboard(db, 1, istanbulDay(new Date()))).words[0];
+  const wordId = selectedWord.id;
   await checks.POST(request("/api/checks", { wordId, checked: true }, adminCookie));
   const senderRequest = (path: string, body?: unknown) => new NextRequest(`http://localhost:3000${path}`, { method: "POST", headers: { authorization: `Bearer ${process.env.AGENT_SECRET}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const claimed = await claim.POST(senderRequest("/api/agent/claim"));
   const payload = await claimed.json();
   expect(payload.slotKey).toMatch(/^notice-\d+$/);
-  expect(payload.message).toBe("📚 Ada “accept” kelimesini 1 kez ezberledi. 2 tekrar kaldı.");
+  expect(payload.message).toBe(`📚 Ada “${selectedWord.term}” kelimesini 1 kez ezberledi. 2 tekrar kaldı.`);
   expect((await complete.POST(senderRequest("/api/agent/complete", { slotKey: payload.slotKey, status: "sent", messageId: "wa-1" }))).status).toBe(200);
   expect((await db.execute("SELECT status FROM learning_notices")).rows[0].status).toBe("sent");
   expect(await (await claim.POST(senderRequest("/api/agent/claim?noticesOnly=1"))).json()).toEqual({ skip: true, reason: "scheduled_paused" });

@@ -10,6 +10,6 @@ export type CurriculumWord = {
   position: number;
 };
 
-export const CURRICULUM_KEY = "english-1000-v1";
+export const CURRICULUM_KEY = "english-1000-v2-random";
 export const CURRICULUM_DAYS = 100;
 export const curriculumWords: CurriculumWord[] = source;
