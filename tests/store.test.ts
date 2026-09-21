@@ -32,19 +32,28 @@ describe("two-person study state", () => {
     db.close();
   });
 
-  it("keeps daily checks separate and brings cards back tomorrow", async () => {
+  it("requires three daily confirmations per word and keeps each person's progress separate", async () => {
     const db = await database();
     const [adminId, memberId] = await createInitialSetup(db, people);
     await createSet(db, adminId, [{ term: "apple", meaning: "elma" }, { term: "book", meaning: "kitap" }], "2026-09-20");
     const first = await getDashboard(db, adminId, "2026-09-20");
     expect(first.remaining).toBe(2);
+    expect(first.words[0].repeatCount).toBe(0);
     await setDailyCheck(db, adminId, first.words[0].id, true, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0]).toMatchObject({ repeatCount: 1, checked: false });
+    expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(2);
+    await setDailyCheck(db, adminId, first.words[0].id, true, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0].repeatCount).toBe(2);
+    await setDailyCheck(db, adminId, first.words[0].id, true, "2026-09-20");
+    await setDailyCheck(db, adminId, first.words[0].id, true, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0]).toMatchObject({ repeatCount: 3, checked: true });
     expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(1);
     expect((await getDashboard(db, memberId, "2026-09-20")).remaining).toBe(2);
     expect((await getDashboard(db, adminId, "2026-09-21")).remaining).toBe(2);
     expect((await getDashboard(db, adminId, "2026-09-27")).set).toBeNull();
     await setDailyCheck(db, adminId, first.words[0].id, false, "2026-09-20");
     expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(2);
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0]).toMatchObject({ repeatCount: 2, checked: false });
     db.close();
   });
 
@@ -95,8 +104,10 @@ describe("two-person study state", () => {
     await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
     let result = await db.execute("SELECT message, status FROM learning_notices");
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].message).toBe("📚 Ada “apple” kelimesini ezberledi.");
+    expect(result.rows[0].message).toBe("📚 Ada “apple” kelimesini 1/3 kez tekrar etti.");
     expect(result.rows[0].status).toBe("pending");
+    await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0].repeatCount).toBe(1);
     await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
     result = await db.execute("SELECT status FROM learning_notices");
     expect(result.rows[0].status).toBe("cancelled");
@@ -107,6 +118,23 @@ describe("two-person study state", () => {
     await removeActiveWord(db, adminId, wordId, "2026-09-20");
     result = await db.execute("SELECT status FROM learning_notices");
     expect(result.rows[0].status).toBe("cancelled");
+    db.close();
+  });
+
+  it("keeps existing one-check rows as one of three repeats during schema migration", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kelime-legacy-"));
+    directories.push(dir);
+    const db = createDb(`file:${join(dir, "test.db")}`);
+    await db.execute(`CREATE TABLE daily_checks (
+      participant_id INTEGER NOT NULL, word_id INTEGER NOT NULL, day TEXT NOT NULL,
+      checked_at TEXT NOT NULL, PRIMARY KEY(participant_id, word_id, day)
+    )`);
+    await ensureSchema(db);
+    const [adminId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+    await db.execute({ sql: "INSERT INTO daily_checks (participant_id, word_id, day, checked_at) VALUES (?, ?, ?, ?)", args: [adminId, wordId, "2026-09-20", new Date().toISOString()] });
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0]).toMatchObject({ repeatCount: 1, checked: false });
     db.close();
   });
 });

@@ -1,6 +1,6 @@
 # Kelime Günlüğü
 
-İki kişinin aynı kelime listesini yedi gün boyunca çalıştığı küçük bir web uygulaması. Her kişi telefon numarası ve kendi PIN'iyle girer; ikisi de aktif haftalık listeye kelime ekleyip çıkarabilir. “Bugün ezberledim” işareti sadece o kişinin o günkü kartını kaldırır ve gruba kişi adı ile kelimeyi içeren ayrı bir WhatsApp bildirimi sıraya alır. Dört saatlik hatırlatmaları da Mac'te çalışan gönderici, birinci kişinin bağlı WhatsApp hesabından seçilen gruba yollar.
+İki kişinin aynı kelime listesini yedi gün boyunca çalıştığı küçük bir web uygulaması. Her kişi telefon numarası ve kendi PIN'iyle girer; ikisi de aktif haftalık listeye kelime ekleyip çıkarabilir. Bir kelime o gün üç kez “Ezberledim” olarak işaretlendiğinde tamamlanır. Karttaki yıldızlar günlük ilerlemeyi gösterir. İlk işaret, gruba kişi adı, kelime ve 1/3 tekrar bilgisini içeren ayrı bir WhatsApp bildirimi sıraya alır. İki saatlik hatırlatmaları da Mac'te çalışan gönderici, birinci kişinin bağlı WhatsApp hesabından seçilen gruba yollar.
 
 ## Yerelde çalıştırma
 
@@ -28,7 +28,7 @@ Mac'te kalıcı çalıştırma için ilk QR bağlantısından sonra sender termi
 
 Anlık mesaj için proje kökünde `npm run local:send-now` çalıştırın; açık olan göndericiye tek gönderim talimatı verir. Durumu `sender/data/sender.log` dosyasından kontrol edin. WhatsApp kütüphanesi mesaj kimliğini döndürmezse gönderim *belirsiz* kaydedilir. Aynı mesajı tekrar istemeden önce grupta görünüp görünmediğini kontrol edin.
 
-Gönderici her 10 saniyede bir kontrol eder. Yeni bir günlük işaret varsa `Ad “kelime” kelimesini ezberledi.` bildirimini seçilmiş gruba yollar. Bekleyen öğrenme bildirimleri 30 dakika sonra sona erer; gönderici geç açılırsa eski bildirimler topluca gönderilmez. İstanbul saatine göre 00.00, 04.00, 08.00, 12.00, 16.00 ve 20.00 ile başlayan dört saatlik dilimlerin her birinde de bir toplu hatırlatma talep eder. Site veya Mac o dilim içinde geç açılırsa o dilimin hatırlatması gönderilir; geçmiş dilimler topluca gönderilmez. Kişi o gün tüm kartlarını işaretlediyse hatırlatmada öğrendiği kelimeler ve tamamladığı bilgisi yer alır. Belirsiz gönderim sonucu otomatik tekrar edilmez.
+Gönderici her 10 saniyede bir kontrol eder. Yeni bir günlük işaret varsa `Ad “kelime” kelimesini 1/3 kez tekrar etti.` bildirimini seçilmiş gruba yollar. Bekleyen öğrenme bildirimleri 30 dakika sonra sona erer; gönderici geç açılırsa eski bildirimler topluca gönderilmez. İstanbul saatine göre 00.00, 02.00, 04.00, 06.00, 08.00, 10.00, 12.00, 14.00, 16.00, 18.00, 20.00 ve 22.00 ile başlayan iki saatlik dilimlerin her birinde bir toplu hatırlatma talep eder. Site veya Mac o dilim içinde geç açılırsa o dilimin hatırlatması gönderilir; geçmiş dilimler topluca gönderilmez. Her eksik kelimenin yanında o gün kaç kez ezberlendiği ve üç tekrardan kaçının kaldığı yazılır. Kişi o gün tüm kartlarda üç tekrarı tamamladıysa hatırlatmada öğrendiği kelimeler ve tamamladığı bilgisi yer alır. Belirsiz gönderim sonucu otomatik tekrar edilmez.
 
 Bu WhatsApp Web yöntemi resmî WhatsApp Business API değildir. WhatsApp otomatik veya toplu mesajları kısıtlayabileceği için hesap ve bağlantı riski vardır; QR bağlantısını yalnızca kendi hesabınız ve izin verdiğiniz grup için kullanın.
 

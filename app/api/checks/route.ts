@@ -9,8 +9,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!Number.isSafeInteger(body?.wordId) || typeof body?.checked !== "boolean") return NextResponse.json({ error: "Geçersiz kart." }, { status: 400 });
   try {
-    await setDailyCheck(await readyDb(), participantId, body.wordId, body.checked, istanbulDay(new Date()));
-    return NextResponse.json({ ok: true });
+    const repeatCount = await setDailyCheck(await readyDb(), participantId, body.wordId, body.checked, istanbulDay(new Date()));
+    return NextResponse.json({ ok: true, repeatCount });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Kart kaydedilemedi." }, { status: 400 });
   }

@@ -64,8 +64,14 @@ it("protects setup and derives check identity from the login cookie", async () =
   const db = getDb();
   const day = istanbulDay(new Date());
   const wordId = (await getDashboard(db, 1, day)).words[0].id;
-  expect((await checks.POST(request("/api/checks", { wordId, checked: true, participantId: 1 }, memberCookie))).status).toBe(200);
+  const firstRepeat = await checks.POST(request("/api/checks", { wordId, checked: true, participantId: 1 }, memberCookie));
+  expect(firstRepeat.status).toBe(200);
+  expect(await firstRepeat.json()).toMatchObject({ repeatCount: 1 });
   expect((await getDashboard(db, 1, day)).remaining).toBe(1);
+  expect((await getDashboard(db, 2, day)).remaining).toBe(1);
+  await checks.POST(request("/api/checks", { wordId, checked: true }, memberCookie));
+  const thirdRepeat = await checks.POST(request("/api/checks", { wordId, checked: true }, memberCookie));
+  expect(await thirdRepeat.json()).toMatchObject({ repeatCount: 3 });
   expect((await getDashboard(db, 2, day)).remaining).toBe(0);
   db.close();
 });
@@ -127,7 +133,7 @@ it("lets both signed-in participants add and remove words in the current set", a
   expect((await words.DELETE(new NextRequest("http://localhost:3000/api/words", { method: "DELETE", headers: { "content-type": "application/json", cookie: adminCookie || "" }, body: JSON.stringify({ wordId }) }))).status).toBe(200);
 });
 
-it("offers a new learning notice to the sender before a four-hour reminder", async () => {
+it("offers a new learning notice to the sender before a two-hour reminder", async () => {
   directory = mkdtempSync(join(tmpdir(), "kelime-api-notice-"));
   process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
   process.env.SETUP_SECRET = "setup-secret-for-test";
@@ -154,7 +160,7 @@ it("offers a new learning notice to the sender before a four-hour reminder", asy
   const claimed = await claim.POST(senderRequest("/api/agent/claim"));
   const payload = await claimed.json();
   expect(payload.slotKey).toMatch(/^notice-\d+$/);
-  expect(payload.message).toBe("📚 Ada “apple” kelimesini ezberledi.");
+  expect(payload.message).toBe("📚 Ada “apple” kelimesini 1/3 kez tekrar etti.");
   expect((await complete.POST(senderRequest("/api/agent/complete", { slotKey: payload.slotKey, status: "sent", messageId: "wa-1" }))).status).toBe(200);
   expect((await db.execute("SELECT status FROM learning_notices")).rows[0].status).toBe("sent");
   expect(await (await claim.POST(senderRequest("/api/agent/claim?noticesOnly=1"))).json()).toEqual({ skip: true, reason: "scheduled_paused" });

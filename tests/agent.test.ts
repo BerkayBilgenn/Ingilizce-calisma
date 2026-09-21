@@ -3,26 +3,47 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ensureSchema } from "../lib/db";
-import { claimLearningNotice, claimSlot, completeLearningNotice, formatMessage, slotKey } from "../lib/agent";
+import { buildSnapshot, claimLearningNotice, claimSlot, completeLearningNotice, formatMessage, slotKey } from "../lib/agent";
+import { createInitialSetup, createSet, getDashboard, setDailyCheck } from "../lib/store";
 
-describe("four-hour reminder slots", () => {
-  it("uses the current Istanbul four-hour slot after a late restart", () => {
+describe("two-hour reminder slots", () => {
+  it("uses the current Istanbul two-hour slot after a late restart", () => {
     expect(slotKey(new Date("2026-09-20T05:01:00Z"))).toBe("2026-09-20-08");
-    expect(slotKey(new Date("2026-09-20T06:37:00Z"))).toBe("2026-09-20-08");
+    expect(slotKey(new Date("2026-09-20T07:01:00Z"))).toBe("2026-09-20-10");
+    expect(slotKey(new Date("2026-09-20T19:01:00Z"))).toBe("2026-09-20-22");
     expect(slotKey(new Date("2026-09-20T21:01:00Z"))).toBe("2026-09-21-00");
   });
 
   it("formats two separate remaining-word sections", () => {
-    const message = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [{ term: "apple", meaning: "elma" }], learned: [] }, { name: "Deniz", remaining: [{ term: "book", meaning: "kitap" }], learned: [] }] });
+    const message = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [{ term: "apple", meaning: "elma", repeatCount: 1 }], learned: [] }, { name: "Deniz", remaining: [{ term: "book", meaning: "kitap", repeatCount: 0 }], learned: [] }] });
     expect(message).toContain("Ada");
     expect(message).toContain("apple — elma");
+    expect(message).toContain("1 kere ezberlendi, kalan ezberlenme 2");
+    expect(message).toContain("0 kere ezberlendi, kalan ezberlenme 3");
     expect(message).toContain("Deniz");
     expect(message).toContain("book — kitap");
-    const complete = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [], learned: [{ term: "apple", meaning: "elma" }] }, { name: "Deniz", remaining: [], learned: [{ term: "book", meaning: "kitap" }] }] });
+    expect(message).toContain("Bir sonraki hatırlatma 2 saat sonra.");
+    const complete = formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [], learned: [{ term: "apple", meaning: "elma", repeatCount: 3 }] }, { name: "Deniz", remaining: [], learned: [{ term: "book", meaning: "kitap", repeatCount: 3 }] }] });
     expect(complete).toContain("Ada · bugün tüm kelimeleri öğrendim");
     expect(complete).toContain("apple — elma");
     expect(complete).toContain("Deniz · bugün tüm kelimeleri öğrendim");
     expect(formatMessage({ day: "2026-09-20", people: [{ name: "Ada", remaining: [], learned: [] }, { name: "Deniz", remaining: [], learned: [] }] })).toBeNull();
+  });
+
+  it("builds reminder progress from today's persisted repeats", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "kelime-snapshot-"));
+    const db = createDb(`file:${join(directory, "test.db")}`);
+    await ensureSchema(db);
+    const [adminId] = await createInitialSetup(db, [
+      { phone: "0537 000 00 00", name: "Ada", pin: "123456" },
+      { phone: "0532 000 00 00", name: "Deniz", pin: "654321" },
+    ]);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    expect(formatMessage(await buildSnapshot(db, "2026-09-20"))).toContain("apple — elma (1 kere ezberlendi, kalan ezberlenme 2)");
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   it("claims a slot only once", async () => {

@@ -55,6 +55,7 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
       day TEXT NOT NULL,
       checked_at TEXT NOT NULL,
+      repeat_count INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3),
       PRIMARY KEY(participant_id, word_id, day)
     )`,
     `CREATE TABLE IF NOT EXISTS send_runs (
@@ -93,4 +94,8 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
     )`,
   ];
   for (const sql of statements) await db.execute(sql);
+  const columns = await db.execute("PRAGMA table_info(daily_checks)");
+  if (!columns.rows.some((row) => row.name === "repeat_count")) {
+    await db.execute("ALTER TABLE daily_checks ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3)");
+  }
 }

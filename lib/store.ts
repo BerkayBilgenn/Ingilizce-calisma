@@ -6,7 +6,7 @@ import { activeOn, dayIndex } from "./study";
 export type PersonInput = { phone: string; name: string; pin: string };
 export type WordInput = { term: string; meaning: string };
 export type Participant = { id: number; phone: string; name: string; role: "admin" | "member" };
-export type StudyWord = { id: number; term: string; meaning: string; checked: boolean };
+export type StudyWord = { id: number; term: string; meaning: string; repeatCount: number; checked: boolean };
 export type Dashboard = {
   person: Participant;
   set: { id: number; startDay: string; dayNumber: number } | null;
@@ -175,18 +175,19 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   const latest = await getLatestSet(db);
   if (!latest || !activeOn(latest.startDay, day)) return { person, set: null, words: [], remaining: 0, completed: 0, history: [] };
   const result = await db.execute({
-    sql: `SELECT w.id, w.term, w.meaning, c.word_id IS NOT NULL AS checked
+    sql: `SELECT w.id, w.term, w.meaning, COALESCE(c.repeat_count, 0) AS repeat_count
           FROM words w LEFT JOIN daily_checks c
           ON c.word_id = w.id AND c.participant_id = ? AND c.day = ?
           WHERE w.set_id = ? AND NOT EXISTS (SELECT 1 FROM word_removals r WHERE r.word_id = w.id) ORDER BY w.position`,
     args: [participantId, day, latest.id],
   });
   const words = result.rows.map((row) => ({
-    id: rowNumber(row.id), term: rowString(row.term), meaning: rowString(row.meaning), checked: Boolean(rowNumber(row.checked)),
+    id: rowNumber(row.id), term: rowString(row.term), meaning: rowString(row.meaning),
+    repeatCount: rowNumber(row.repeat_count), checked: rowNumber(row.repeat_count) >= 3,
   }));
   const historyResult = await db.execute({
     sql: `SELECT c.day, COUNT(*) AS completed FROM daily_checks c JOIN words w ON w.id = c.word_id
-          WHERE c.participant_id = ? AND w.set_id = ? GROUP BY c.day ORDER BY c.day`,
+          WHERE c.participant_id = ? AND w.set_id = ? AND c.repeat_count >= 3 GROUP BY c.day ORDER BY c.day`,
     args: [participantId, latest.id],
   });
   return {
@@ -199,7 +200,7 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   };
 }
 
-export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<void> {
+export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<number> {
   const person = await getParticipant(db, participantId);
   const latest = await getLatestSet(db);
   if (!person || !latest || !activeOn(latest.startDay, day)) throw new Error("No active set");
@@ -207,13 +208,17 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
   if (!word.rows.length) throw new Error("Word is not in the active set");
   const tx = await db.transaction("write");
   try {
+    const previous = await tx.execute({ sql: "SELECT repeat_count FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+    const count = previous.rows.length ? rowNumber(previous.rows[0].repeat_count) : 0;
+    const nextCount = checked ? Math.min(count + 1, 3) : Math.max(count - 1, 0);
     if (checked) {
-      const result = await tx.execute({
-        sql: "INSERT OR IGNORE INTO daily_checks (participant_id, word_id, day, checked_at) VALUES (?, ?, ?, ?)",
+      await tx.execute({
+        sql: `INSERT INTO daily_checks (participant_id, word_id, day, checked_at, repeat_count) VALUES (?, ?, ?, ?, 1)
+              ON CONFLICT(participant_id, word_id, day) DO UPDATE SET repeat_count = min(daily_checks.repeat_count + 1, 3), checked_at = excluded.checked_at`,
         args: [participantId, wordId, day, new Date().toISOString()],
       });
-      if (Number(result.rowsAffected) === 1) {
-        const message = `📚 ${person.name} “${String(word.rows[0].term)}” kelimesini ezberledi.`;
+      if (count === 0) {
+        const message = `📚 ${person.name} “${String(word.rows[0].term)}” kelimesini 1/3 kez tekrar etti.`;
         await tx.execute({
           sql: `INSERT INTO learning_notices (participant_id, word_id, day, message, status) VALUES (?, ?, ?, ?, 'pending')
                 ON CONFLICT(participant_id, word_id, day) DO UPDATE SET
@@ -223,10 +228,15 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
         });
       }
     } else {
-      await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
-      await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND status = 'pending'", args: [participantId, wordId, day] });
+      if (nextCount === 0) {
+        await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+        await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND status = 'pending'", args: [participantId, wordId, day] });
+      } else {
+        await tx.execute({ sql: "UPDATE daily_checks SET repeat_count = ? WHERE participant_id = ? AND word_id = ? AND day = ?", args: [nextCount, participantId, wordId, day] });
+      }
     }
     await tx.commit();
+    return nextCount;
   } catch (error) {
     await tx.rollback();
     throw error;
