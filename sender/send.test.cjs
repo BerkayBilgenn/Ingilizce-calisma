@@ -5,6 +5,8 @@ const { sendGroup } = require("./whatsapp.cjs");
 (async () => {
   const client = { sendMessage: async () => undefined };
   await assert.rejects(sendGroup(client, "group@g.us", "kelimeler"), /kimliğini döndürmedi/);
+  client.sendMessage = async () => ({});
+  await assert.rejects(sendGroup(client, "group@g.us", "kelimeler"), /kimliğini döndürmedi/);
   client.sendMessage = async () => ({ id: { _serialized: "message-1" } });
   assert.deepEqual(await sendGroup(client, "group@g.us", "kelimeler"), { messageId: "message-1" });
 
@@ -21,7 +23,19 @@ const { sendGroup } = require("./whatsapp.cjs");
   };
   assert.deepEqual(await sendGroup(eventClient, "group@g.us", "kelimeler", { confirmTimeoutMs: 100 }), { messageId: "message-event" });
 
-  client.sendMessage = async () => undefined;
+  const ambiguousEventClient = new EventEmitter();
+  ambiguousEventClient.sendMessage = async () => {
+    setImmediate(() => ambiguousEventClient.emit("message_create", {
+      fromMe: true,
+      body: "kelimeler",
+      timestamp: Math.floor(Date.now() / 1000),
+      id: { $1: "wrong-chat" },
+    }));
+    return undefined;
+  };
+  await assert.rejects(sendGroup(ambiguousEventClient, "group@g.us", "kelimeler", { confirmTimeoutMs: 20 }), /kimliğini döndürmedi/);
+
+  client.sendMessage = async () => ({});
   let checks = 0;
   client.getChatById = async () => ({
     fetchMessages: async () => ++checks < 2 ? [] : [{ fromMe: true, body: "kelimeler", timestamp: Math.floor(Date.now() / 1000), id: { $1: "message-2" } }],

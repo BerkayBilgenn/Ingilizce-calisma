@@ -29,6 +29,7 @@ describe("two-person study state", () => {
     await createSet(db, adminId, [{ term: "legacy", meaning: "eski" }], "2026-09-20");
     const legacyWordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
     await setDailyCheck(db, adminId, legacyWordId, true, "2026-09-20");
+    await db.execute("INSERT INTO send_runs (slot_key, status) VALUES ('2026-09-21-14', 'sent')");
 
     const firstId = await activateCurriculum(db, "2026-09-21", () => 0);
     expect(await activateCurriculum(db, "2026-09-22", () => 1)).toBe(firstId);
@@ -37,6 +38,7 @@ describe("two-person study state", () => {
     expect(Number((await db.execute("SELECT COUNT(*) AS count FROM sets")).rows[0].count)).toBe(1);
     expect(Number((await db.execute("SELECT COUNT(*) AS count FROM daily_checks")).rows[0].count)).toBe(0);
     expect(Number((await db.execute("SELECT COUNT(*) AS count FROM learning_notices")).rows[0].count)).toBe(0);
+    expect((await db.execute("SELECT status FROM send_runs WHERE slot_key = '2026-09-21-14'")).rows[0].status).toBe("sent");
     expect(Number((await db.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [firstId] })).rows[0].count)).toBe(1000);
     const days = await db.execute({ sql: "SELECT scheduled_day, COUNT(*) AS count FROM words WHERE set_id = ? GROUP BY scheduled_day ORDER BY scheduled_day", args: [firstId] });
     expect(days.rows).toHaveLength(100);

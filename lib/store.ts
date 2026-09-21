@@ -114,7 +114,6 @@ export async function activateCurriculum(db: Client, startDay: string, randomInd
     await tx.execute("DELETE FROM learning_notices");
     await tx.execute("DELETE FROM daily_checks");
     await tx.execute("DELETE FROM word_removals");
-    await tx.execute("DELETE FROM send_runs");
     await tx.execute("DELETE FROM words");
     await tx.execute("DELETE FROM sets");
     await tx.execute({ sql: "INSERT INTO sets (start_day, duration_days, program_key) VALUES (?, ?, ?)", args: [startDay, CURRICULUM_DAYS, CURRICULUM_KEY] });

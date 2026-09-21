@@ -67,10 +67,10 @@ function serializedId(value) {
   return value._serialized || value.$1 || (value.user && value.server ? `${value.user}@${value.server}` : "");
 }
 
-function outgoingMatch(item, groupId, text, startedAt) {
+function outgoingMatch(item, groupId, text, startedAt, allowMissingDestination = false) {
   if (!item?.fromMe || item.body !== text || Number(item.timestamp || 0) < startedAt - 2) return false;
   const destination = serializedId(item.to) || serializedId(item.id?.remote);
-  return !destination || destination === groupId;
+  return destination === groupId || (allowMissingDestination && !destination);
 }
 
 function outgoingWatcher(client, groupId, text, startedAt, timeoutMs) {
@@ -91,9 +91,10 @@ function outgoingWatcher(client, groupId, text, startedAt, timeoutMs) {
   return { promise, stop() { finish(null); } };
 }
 
-function confirmedMessage(item) {
+function confirmedMessage(item, allowSynthetic = false) {
   if (!item) return null;
   const id = serializedId(item.id);
+  if (!id && !allowSynthetic) return null;
   return { messageId: id || `confirmed-${item.timestamp || Date.now()}` };
 }
 
@@ -117,15 +118,15 @@ async function sendGroup(client, groupId, text, {
     watcher.stop();
     return returned;
   }
-  const eventMessage = confirmedMessage(await watcher.promise);
+  const eventMessage = confirmedMessage(await watcher.promise, true);
   if (eventMessage) return eventMessage;
   if (typeof client.getChatById === "function") {
     for (let attempt = 0; attempt < confirmAttempts; attempt += 1) {
       try {
         const chat = await client.getChatById(groupId);
         const recent = await chat?.fetchMessages({ limit: 30 });
-        const confirmed = recent?.find((item) => outgoingMatch(item, groupId, text, startedAt));
-        const result = confirmedMessage(confirmed);
+        const confirmed = recent?.find((item) => outgoingMatch(item, groupId, text, startedAt, true));
+        const result = confirmedMessage(confirmed, true);
         if (result) return result;
       } catch { /* Keep checking: WhatsApp Web may still be updating its local chat model. */ }
       if (attempt + 1 < confirmAttempts) await sleep(confirmIntervalMs);
