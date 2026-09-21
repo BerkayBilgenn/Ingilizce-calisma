@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { Dashboard, StudyWord } from "@/lib/store";
+import { millisecondsUntilNextIstanbulDay } from "@/lib/study";
 import StarBurst from "./star-burst";
 import WordEditor from "./word-editor";
 
@@ -129,6 +130,11 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
   const currentDay = initial.set?.dayNumber || 1;
   const windowStart = Math.min(Math.max(currentDay - 3, 1), 94);
   const visibleDays = Array.from({ length: 7 }, (_, index) => windowStart + index);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => window.location.reload(), millisecondsUntilNextIstanbulDay(new Date()) + 250);
+    return () => window.clearTimeout(timer);
+  }, [today]);
 
   async function changeRepeat(word: StudyWord, increase: boolean) {
     const optimisticCount = Math.max(0, Math.min(3, word.repeatCount + (increase ? 1 : -1)));
