@@ -3,7 +3,6 @@
 import { useState, type FormEvent } from "react";
 import type { Dashboard, StudyWord } from "@/lib/store";
 import StarBurst from "./star-burst";
-import StarField from "./star-field";
 import WordEditor from "./word-editor";
 
 type Props = { setupNeeded: boolean; initial: Dashboard | null; today: string };
@@ -28,16 +27,9 @@ function Logo() {
 
 function EntryShell({ children, label }: { children: React.ReactNode; label: string }) {
   return <div className="entry-shell">
-    <StarField />
     <header className="entry-header"><Logo /><span className="eyebrow">{label}</span></header>
     <main className="entry-main">{children}</main>
   </div>;
-}
-
-function RepeatStars({ count }: { count: number }) {
-  return <span className="repeat-stars" aria-label={`Bugün 3 tekrardan ${count} tanesi tamamlandı`}>
-    {[1, 2, 3].map((star) => <span key={star} className={star <= count ? "active" : ""} aria-hidden="true">★</span>)}
-  </span>;
 }
 
 function SetupForm() {
@@ -163,7 +155,6 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
   }
 
   return <div className="site-shell">
-    <StarField />
     <header className="site-header">
       <div className="header-inner">
         <Logo />
@@ -177,43 +168,42 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
           <h1>Küçük tekrarlar,<br /><em>kalıcı kelimeler.</em></h1>
           <p>Her kelimeyi günde üç kez işaretle. Üç yıldız dolduğunda bugünkü çalışma tamamlanır.</p>
         </div>
-        <div className="hero-accent" aria-hidden="true"><span>learn</span><strong>öğren</strong><i>★</i></div>
+        <div className="hero-accent" aria-hidden="true"><span>learn</span><strong>öğren</strong><i>↗</i></div>
       </section>
 
       {initial.set ? <>
         <section className="panel progress-panel">
           <div className="progress-top">
             <div><span className="eyebrow">{initial.set.durationDays} GÜNLÜK YOLCULUK</span><h2>Bugün {initial.set.dayNumber}. gün</h2></div>
-            <div className="progress-count"><strong>{completed.length}<span> / {words.length}</span></strong><small>3 tekrarı tamamlandı</small></div>
+            <div className="progress-count"><strong>{completed.length}<span> / {words.length}</span></strong><small>kelime tamamlandı</small></div>
           </div>
           <div className="progress-track" role="progressbar" aria-label="Bugün üç tekrarı tamamlanan kelimeler" aria-valuenow={completed.length} aria-valuemin={0} aria-valuemax={words.length}><span style={{ width: `${dailyPercent}%` }} /></div>
           <ol className="day-track">{visibleDays.map((day) => <li key={day} className={day === currentDay ? "current" : day < currentDay ? "past" : "future"}><span>{day < currentDay ? "✓" : day}</span><small>Gün {day}</small></li>)}</ol>
         </section>
 
-        <div className="section-heading"><div><span className="eyebrow">SIRADAKİ KARTLAR</span><h2>Bugün kalan kelimeler <b>{remaining.length}</b></h2></div><p>Bir kelime, üç tekrar tamamlanana kadar burada kalır.</p></div>
+        <div className="section-heading"><div><span className="eyebrow">SIRADAKİ KARTLAR</span><h2>Bugün kalan kelimeler <b>{remaining.length}</b></h2></div><p>Kelime 3/3 olunca bugün yeniden görünmez.</p></div>
         {error && <p className="form-error" role="alert">{error}</p>}
         {remaining.length ? <ul className="word-grid">{remaining.map((word, index) => <li className="word-card" key={word.id}>
-          <div className="word-top"><span>KELİME {String(index + 1).padStart(2, "0")}</span><RepeatStars count={word.repeatCount} /></div>
+          <div className="word-top"><span>KELİME {String(index + 1).padStart(2, "0")}</span><span aria-label={`Bugün ${word.repeatCount}/3 tekrar tamamlandı`}>{word.repeatCount}/3 ✳</span></div>
           <h3>{word.term}</h3>
-          <span className="translation-label">TÜRKÇE ANLAMI</span>
-          <p className="word-meaning">{word.meaning}</p>
-          {word.pronunciation && <div className="pronunciation"><span>OKUNUŞU</span><strong>{word.pronunciation}</strong></div>}
-          <div className="repeat-copy">{word.repeatCount > 0 ? <><strong>{word.repeatCount} kez ezberlendi</strong><span>{3 - word.repeatCount} tekrar kaldı</span></> : <><strong>3 tekrar hedefi</strong><span>Henüz başlanmadı</span></>}</div>
+          <span className="translation-label">TÜRKÇESİ</span>
+          <p>{word.meaning}</p>
+          {word.pronunciation && <><span className="translation-label pronunciation-label">OKUNUŞU</span><p>{word.pronunciation}</p></>}
           <button className="check-button" onClick={() => changeRepeat(word, true)} disabled={pending === word.id}>
-            <span className="check-icon" aria-hidden="true">★</span>
-            {pending === word.id ? "Kaydediliyor…" : `Ezberledim · ${word.repeatCount + 1}/3`}
+            <span aria-hidden="true">★</span>
+            {pending === word.id ? "Kaydediliyor…" : `Bugün ezberledim · ${word.repeatCount + 1}/3`}
             <StarBurst burstKey={burst.wordId === word.id ? burst.key : 0} />
           </button>
-        </li>)}</ul> : <div className="panel done-state"><span aria-hidden="true">★</span><h3>Bugünlük hepsi tamam!</h3><p>Bugünün 10 kelimesinde üç tekrarı tamamladın. Yarın 10 yeni kelime seni bekliyor.</p></div>}
+        </li>)}</ul> : <div className="panel done-state"><span aria-hidden="true">✓</span><h3>Bugünlük hepsi tamam!</h3><p>Harika iş çıkardın. Yarın 10 yeni kelime seni bekliyor.</p></div>}
 
         {completed.length > 0 && <section className="completed-section">
-          <div className="section-heading"><div><span className="eyebrow">BUGÜN TAMAMLANANLAR</span><h2>Üç tekrarı biten kelimeler <b>{completed.length}</b></h2></div></div>
-          <ul className="completed-list">{completed.map((word) => <li key={word.id}><RepeatStars count={word.repeatCount} /><strong>{word.term}</strong><span>{word.meaning}</span><button onClick={() => changeRepeat(word, false)} disabled={pending === word.id}>Bir tekrarı geri al</button></li>)}</ul>
+          <div className="section-heading"><div><span className="eyebrow">BUGÜN TAMAMLANANLAR</span><h2>İşaretlenen kelimeler <b>{completed.length}</b></h2></div></div>
+          <ul className="completed-list">{completed.map((word) => <li key={word.id}><span aria-hidden="true">✓</span><strong>{word.term}</strong><span>{word.meaning}</span><button onClick={() => changeRepeat(word, false)} disabled={pending === word.id}>Geri al</button></li>)}</ul>
         </section>}
         {!initial.set.programKey && <WordEditor words={words} />}
       </> : <section className="panel empty-work"><span className="eyebrow">100 GÜNLÜK YOLCULUK</span><h2>Program tamamlandı.</h2><p>1.000 kelimeyi 100 güne bölerek tamamladınız.</p></section>}
 
-      <footer className="site-footer"><span>Her gün 10 kelime, her kelimede üç tekrar.</span><span>İkra & Berkay © 2026</span></footer>
+      <footer className="site-footer"><span>Her gün bir adım. Yüz günde sağlam bir tekrar.</span><span>İkra & Berkay © 2026</span></footer>
     </main>
   </div>;
 }
