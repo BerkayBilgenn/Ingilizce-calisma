@@ -114,7 +114,7 @@ client.once("ready", async () => {
     console.log("sender/.env içine WHATSAPP_GROUP_NAME olarak tam grup adını yazın.");
     return;
   }
-  console.log("Gönderici hazır; dört saatlik dilimler izleniyor.");
+  console.log("Gönderici hazır; iki saatlik dilimler izleniyor.");
   process.on("SIGUSR2", () => { void triggerManual(); });
   if (process.env.SEND_NOW === "1") await triggerManual();
   scheduler.start();

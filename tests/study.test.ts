@@ -14,4 +14,9 @@ describe("Istanbul study days", () => {
     expect(activeOn("2026-09-20", "2026-09-27")).toBe(false);
     expect(activeOn("2026-09-20", "2026-09-19")).toBe(false);
   });
+
+  it("supports an explicit 100-day program duration", () => {
+    expect(activeOn("2026-09-21", "2026-12-29", 100)).toBe(true);
+    expect(activeOn("2026-09-21", "2026-12-30", 100)).toBe(false);
+  });
 });

@@ -4,7 +4,7 @@
 
 **Goal:** Let both participants edit the active weekly word list and notify the WhatsApp group when one first learns a word that day.
 
-**Architecture:** Keep removals and learning notices in separate tables so old check history survives. Add authenticated word editing routes and a near-time notice queue consumed by the existing Mac sender. Keep four-hour reminders and uncertain-send protection intact.
+**Architecture:** Keep removals and learning notices in separate tables so old check history survives. Add authenticated word editing routes and a near-time notice queue consumed by the existing Mac sender. Keep two-hour reminders and uncertain-send protection intact.
 
 **Tech Stack:** Next.js 16, React 19, libSQL/Turso, Node.js CommonJS sender, Vitest.
 
@@ -34,7 +34,7 @@
 
 - [ ] Write failing tests for one notice per new daily check, pending cancellation, expiration, claim, and completion.
 - [ ] Run focused tests and confirm the intended failures.
-- [ ] Store notice creation with the check transaction; claim pending notices before four-hour reminders and complete by notice id.
+- [ ] Store notice creation with the check transaction; claim pending notices before two-hour reminders and complete by notice id.
 - [ ] Run focused tests and confirm they pass.
 
 ## Task 3: Sender and dashboard
@@ -42,6 +42,6 @@
 **Files:** `sender/index.cjs`, `sender/schedule.test.cjs`, `components/study-app.tsx`, `app/globals.css`, `README.md`.
 
 - [ ] Add a meaningful sender test for notice priority and no uncertain retry; run it red.
-- [ ] Set sender polling to about 10 seconds while preserving the four-hour deduplication.
+- [ ] Set sender polling to about 10 seconds while preserving the two-hour deduplication.
 - [ ] Add a labelled add-word form and removal controls to the active-set dashboard; refresh after success and show save errors.
 - [ ] Run web tests, sender tests, production build, and diff checks; inspect mobile and keyboard behavior where UI access permits.

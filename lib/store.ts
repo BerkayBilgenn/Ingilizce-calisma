@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import type { Client } from "@libsql/client";
 import { hashPin, normalizePhone, verifyPin } from "./auth";
 import { activeOn, dayIndex } from "./study";
+import { CURRICULUM_DAYS, CURRICULUM_KEY, curriculumWords } from "./curriculum";
 
 export type PersonInput = { phone: string; name: string; pin: string };
 export type WordInput = { term: string; meaning: string };
 export type Participant = { id: number; phone: string; name: string; role: "admin" | "member" };
-export type StudyWord = { id: number; term: string; meaning: string; checked: boolean };
+export type StudyWord = { id: number; term: string; meaning: string; pronunciation: string; level: string; category: string; repeatCount: number; checked: boolean };
 export type Dashboard = {
   person: Participant;
-  set: { id: number; startDay: string; dayNumber: number } | null;
+  set: { id: number; startDay: string; dayNumber: number; durationDays: number; programKey: string | null } | null;
   words: StudyWord[];
   remaining: number;
   completed: number;
@@ -18,6 +19,10 @@ export type Dashboard = {
 
 function rowNumber(value: unknown): number { return Number(value); }
 function rowString(value: unknown): string { return String(value); }
+function repeatNotice(name: string, term: string, count: number): string {
+  if (count === 3) return `⭐ ${name} “${term}” kelimesini bugün 3 kez ezberledi. Tamamlandı!`;
+  return `📚 ${name} “${term}” kelimesini ${count} kez ezberledi. ${3 - count} tekrar kaldı.`;
+}
 
 export async function createInitialSetup(db: Client, people: PersonInput[]): Promise<[number, number]> {
   if (people.length !== 2) throw new Error("Exactly two people are required");
@@ -78,10 +83,38 @@ export async function getParticipant(db: Client, id: number): Promise<Participan
   return row ? { id: rowNumber(row.id), phone: rowString(row.phone), name: rowString(row.name), role: row.role === "admin" ? "admin" : "member" } : null;
 }
 
-export async function getLatestSet(db: Client): Promise<{ id: number; startDay: string } | null> {
-  const result = await db.execute("SELECT id, start_day FROM sets ORDER BY id DESC LIMIT 1");
+export async function getLatestSet(db: Client): Promise<{ id: number; startDay: string; durationDays: number; programKey: string | null } | null> {
+  const result = await db.execute("SELECT id, start_day, duration_days, program_key FROM sets ORDER BY id DESC LIMIT 1");
   const row = result.rows[0];
-  return row ? { id: rowNumber(row.id), startDay: rowString(row.start_day) } : null;
+  return row ? { id: rowNumber(row.id), startDay: rowString(row.start_day), durationDays: rowNumber(row.duration_days), programKey: row.program_key === null ? null : rowString(row.program_key) } : null;
+}
+
+export async function activateCurriculum(db: Client, startDay: string): Promise<number> {
+  const existing = await db.execute({ sql: "SELECT id FROM sets WHERE program_key = ?", args: [CURRICULUM_KEY] });
+  if (existing.rows[0]) return rowNumber(existing.rows[0].id);
+  const tx = await db.transaction("write");
+  try {
+    await tx.execute({ sql: "INSERT OR IGNORE INTO sets (start_day, duration_days, program_key) VALUES (?, ?, ?)", args: [startDay, CURRICULUM_DAYS, CURRICULUM_KEY] });
+    const setResult = await tx.execute({ sql: "SELECT id FROM sets WHERE program_key = ?", args: [CURRICULUM_KEY] });
+    const setId = rowNumber(setResult.rows[0].id);
+    const count = await tx.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [setId] });
+    if (rowNumber(count.rows[0].count) === 0) {
+      for (let offset = 0; offset < curriculumWords.length; offset += 100) {
+        await tx.batch(curriculumWords.slice(offset, offset + 100).map((word) => ({
+          sql: `INSERT INTO words (set_id, term, meaning, pronunciation, level, category, scheduled_day, position)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [setId, word.term, word.meaning, word.pronunciation, word.level, word.category, word.dayNumber, word.position],
+        })));
+      }
+    }
+    const finalCount = await tx.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [setId] });
+    if (rowNumber(finalCount.rows[0].count) !== curriculumWords.length) throw new Error("Curriculum import is incomplete");
+    await tx.commit();
+    return setId;
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
 }
 
 export async function createSet(db: Client, adminId: number, inputWords: WordInput[], startDay: string): Promise<number> {
@@ -92,7 +125,7 @@ export async function createSet(db: Client, adminId: number, inputWords: WordInp
   if (words.some((word) => !word.term || !word.meaning || word.term.length > 100 || word.meaning.length > 300)) throw new Error("Invalid word or meaning");
   if (new Set(words.map((word) => word.term.toLocaleLowerCase("en"))).size !== words.length) throw new Error("Duplicate words are not allowed");
   const latest = await getLatestSet(db);
-  if (latest && activeOn(latest.startDay, startDay)) throw new Error("An active set already exists");
+  if (latest && activeOn(latest.startDay, startDay, latest.durationDays)) throw new Error("An active set already exists");
   const tx = await db.transaction("write");
   try {
     const result = await tx.execute({ sql: "INSERT INTO sets (start_day) VALUES (?)", args: [startDay] });
@@ -111,7 +144,8 @@ export async function createSet(db: Client, adminId: number, inputWords: WordInp
 async function editableSet(db: Client, participantId: number, day: string) {
   const person = await getParticipant(db, participantId);
   const set = await getLatestSet(db);
-  if (!person || !set || !activeOn(set.startDay, day)) throw new Error("Aktif haftalık liste bulunamadı.");
+  if (!person || !set || !activeOn(set.startDay, day, set.durationDays)) throw new Error("Aktif kelime programı bulunamadı.");
+  if (set.programKey) throw new Error("100 günlük programdaki kelimeler sabittir.");
   return set;
 }
 
@@ -173,25 +207,29 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   const person = await getParticipant(db, participantId);
   if (!person) throw new Error("Participant not found");
   const latest = await getLatestSet(db);
-  if (!latest || !activeOn(latest.startDay, day)) return { person, set: null, words: [], remaining: 0, completed: 0, history: [] };
+  if (!latest || !activeOn(latest.startDay, day, latest.durationDays)) return { person, set: null, words: [], remaining: 0, completed: 0, history: [] };
+  const currentIndex = dayIndex(latest.startDay, day);
   const result = await db.execute({
-    sql: `SELECT w.id, w.term, w.meaning, c.word_id IS NOT NULL AS checked
+    sql: `SELECT w.id, w.term, w.meaning, w.pronunciation, w.level, w.category, COALESCE(c.repeat_count, 0) AS repeat_count
           FROM words w LEFT JOIN daily_checks c
           ON c.word_id = w.id AND c.participant_id = ? AND c.day = ?
-          WHERE w.set_id = ? AND NOT EXISTS (SELECT 1 FROM word_removals r WHERE r.word_id = w.id) ORDER BY w.position`,
-    args: [participantId, day, latest.id],
+          WHERE w.set_id = ? AND (? IS NULL OR w.scheduled_day = ?)
+          AND NOT EXISTS (SELECT 1 FROM word_removals r WHERE r.word_id = w.id) ORDER BY w.position`,
+    args: [participantId, day, latest.id, latest.programKey, currentIndex],
   });
   const words = result.rows.map((row) => ({
-    id: rowNumber(row.id), term: rowString(row.term), meaning: rowString(row.meaning), checked: Boolean(rowNumber(row.checked)),
+    id: rowNumber(row.id), term: rowString(row.term), meaning: rowString(row.meaning),
+    pronunciation: rowString(row.pronunciation), level: rowString(row.level), category: rowString(row.category),
+    repeatCount: rowNumber(row.repeat_count), checked: rowNumber(row.repeat_count) >= 3,
   }));
   const historyResult = await db.execute({
     sql: `SELECT c.day, COUNT(*) AS completed FROM daily_checks c JOIN words w ON w.id = c.word_id
-          WHERE c.participant_id = ? AND w.set_id = ? GROUP BY c.day ORDER BY c.day`,
+          WHERE c.participant_id = ? AND w.set_id = ? AND c.repeat_count >= 3 GROUP BY c.day ORDER BY c.day`,
     args: [participantId, latest.id],
   });
   return {
     person,
-    set: { id: latest.id, startDay: latest.startDay, dayNumber: dayIndex(latest.startDay, day) },
+    set: { id: latest.id, startDay: latest.startDay, dayNumber: currentIndex, durationDays: latest.durationDays, programKey: latest.programKey },
     words,
     remaining: words.filter((word) => !word.checked).length,
     completed: words.filter((word) => word.checked).length,
@@ -199,34 +237,47 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   };
 }
 
-export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<void> {
+export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<number> {
   const person = await getParticipant(db, participantId);
   const latest = await getLatestSet(db);
-  if (!person || !latest || !activeOn(latest.startDay, day)) throw new Error("No active set");
-  const word = await db.execute({ sql: "SELECT id, term FROM words WHERE id = ? AND set_id = ? AND NOT EXISTS (SELECT 1 FROM word_removals WHERE word_id = words.id)", args: [wordId, latest.id] });
+  if (!person || !latest || !activeOn(latest.startDay, day, latest.durationDays)) throw new Error("No active set");
+  const currentIndex = dayIndex(latest.startDay, day);
+  const word = await db.execute({ sql: "SELECT id, term FROM words WHERE id = ? AND set_id = ? AND (? IS NULL OR scheduled_day = ?) AND NOT EXISTS (SELECT 1 FROM word_removals WHERE word_id = words.id)", args: [wordId, latest.id, latest.programKey, currentIndex] });
   if (!word.rows.length) throw new Error("Word is not in the active set");
   const tx = await db.transaction("write");
   try {
+    const previous = await tx.execute({ sql: "SELECT repeat_count FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+    const count = previous.rows.length ? rowNumber(previous.rows[0].repeat_count) : 0;
+    const nextCount = checked ? Math.min(count + 1, 3) : Math.max(count - 1, 0);
     if (checked) {
-      const result = await tx.execute({
-        sql: "INSERT OR IGNORE INTO daily_checks (participant_id, word_id, day, checked_at) VALUES (?, ?, ?, ?)",
+      await tx.execute({
+        sql: `INSERT INTO daily_checks (participant_id, word_id, day, checked_at, repeat_count) VALUES (?, ?, ?, ?, 1)
+              ON CONFLICT(participant_id, word_id, day) DO UPDATE SET repeat_count = min(daily_checks.repeat_count + 1, 3), checked_at = excluded.checked_at`,
         args: [participantId, wordId, day, new Date().toISOString()],
       });
-      if (Number(result.rowsAffected) === 1) {
-        const message = `📚 ${person.name} “${String(word.rows[0].term)}” kelimesini ezberledi.`;
+      if (nextCount > count) {
+        const message = repeatNotice(person.name, String(word.rows[0].term), nextCount);
         await tx.execute({
-          sql: `INSERT INTO learning_notices (participant_id, word_id, day, message, status) VALUES (?, ?, ?, ?, 'pending')
-                ON CONFLICT(participant_id, word_id, day) DO UPDATE SET
+          sql: `INSERT INTO learning_notices (participant_id, word_id, day, repeat_count, message, status) VALUES (?, ?, ?, ?, ?, 'pending')
+                ON CONFLICT(participant_id, word_id, day, repeat_count) DO UPDATE SET
                 status = CASE WHEN learning_notices.status = 'cancelled' THEN 'pending' ELSE learning_notices.status END,
+                message = excluded.message,
                 created_at = CASE WHEN learning_notices.status = 'cancelled' THEN CURRENT_TIMESTAMP ELSE learning_notices.created_at END`,
-          args: [participantId, wordId, day, message],
+          args: [participantId, wordId, day, nextCount, message],
         });
       }
     } else {
-      await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
-      await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND status = 'pending'", args: [participantId, wordId, day] });
+      if (nextCount === 0) {
+        await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
+      } else {
+        await tx.execute({ sql: "UPDATE daily_checks SET repeat_count = ? WHERE participant_id = ? AND word_id = ? AND day = ?", args: [nextCount, participantId, wordId, day] });
+      }
+      if (count > 0) {
+        await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND repeat_count = ? AND status = 'pending'", args: [participantId, wordId, day, count] });
+      }
     }
     await tx.commit();
+    return nextCount;
   } catch (error) {
     await tx.rollback();
     throw error;

@@ -4,7 +4,7 @@
 
 **Goal:** Build a two-person vocabulary review site for Vercel and a Mac-based WhatsApp group reminder that posts each person's remaining words every four hours.
 
-**Architecture:** Next.js serves the mobile web interface and protected JSON endpoints. libSQL stores users, seven-day word sets, daily checks and send runs locally or in Turso. A separate long-running Node process on the first participant's Mac connects to their real WhatsApp Web session, claims each four-hour slot from the site, and sends one combined group message.
+**Architecture:** Next.js serves the mobile web interface and protected JSON endpoints. libSQL stores users, seven-day word sets, daily checks and send runs locally or in Turso. A separate long-running Node process on the first participant's Mac connects to their real WhatsApp Web session, claims each two-hour slot from the site, and sends one combined group message.
 
 **Tech Stack:** Next.js App Router, TypeScript, React, libSQL, Vitest, Node.js 24, whatsapp-web.js, qrcode.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - First version supports exactly two registered participants and one selected WhatsApp group.
-- Daily boundaries use Europe/Istanbul. Slots are 00.00, 04.00, 08.00, 12.00, 16.00 and 20.00.
+- Daily boundaries use Europe/Istanbul. Slots begin at 00.00 and repeat every two hours through 22.00.
 - A checked word disappears only for that participant on that day, reappears the next day, and stops after day seven.
 - Phone numbers and secrets never enter source control. PINs are hashed. Session cookies are HttpOnly and Secure in production.
 - The Mac sender is the only process that controls WhatsApp; it sends from the first participant's authenticated account. Never send automatic test messages to the real group.
@@ -27,7 +27,7 @@
 - lib/study.ts: Istanbul date and seven-day card rules.
 - lib/auth.ts: phone normalization, PIN verification and signed sessions.
 - lib/store.ts: focused persistence functions for users, sets, words and checks.
-- lib/agent.ts: four-hour slots, message format and send-run state.
+- lib/agent.ts: two-hour slots, message format and send-run state.
 - app/api/setup/route.ts, app/api/login/route.ts, app/api/logout/route.ts, app/api/checks/route.ts, app/api/sets/route.ts: browser actions.
 - app/api/agent/claim/route.ts, app/api/agent/complete/route.ts, app/api/agent/heartbeat/route.ts: sender-only actions.
 - app/page.tsx, app/layout.tsx, app/globals.css, components/study-app.tsx: responsive user interface.
@@ -113,7 +113,7 @@ expect(formatMessage({day: "2026-09-20", people: [{name:"A",remaining:[]},{name:
 
 **Interfaces:** createWhatsAppClient({sessionPath,onQr,onState}), listGroups(): Promise<Array<{id,name}>>, sendGroup(id,text): Promise<{messageId:string}>; createScheduler({now,claim,send,complete}) exposes tick() and start().
 
-- [ ] **Step 1: Write failing scheduler tests with fake WhatsApp and API functions.** Assert one send in a four-hour window, no send after the five-minute window, no send when claim says skip, and uncertain send has no automatic retry.
+- [ ] **Step 1: Write failing scheduler tests with fake WhatsApp and API functions.** Assert one send in a two-hour window, no send after the five-minute window, no send when claim says skip, and uncertain send has no automatic retry.
 - [ ] **Step 2: Run sender tests and confirm failure.**
 - [ ] **Step 3: Implement scheduler and HTTP client.** Poll on startup and every 30 seconds, but only claim inside the first five minutes of each slot. Persist no credentials in source. Use AGENT_SECRET against SITE_URL over HTTPS outside localhost.
 - [ ] **Step 4: Implement WhatsApp Web adapter with LocalAuth.** The real account is linked by QR. A local dashboard bound to 127.0.0.1 shows QR, connection state, available groups, selected group, last send, message preview, and a deliberate one-time send button. Save only selected group id and browser session under sender/data, both ignored by Git. Never select a group from its name alone when duplicates exist.

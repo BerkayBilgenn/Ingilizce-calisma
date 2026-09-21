@@ -2,13 +2,13 @@ import type { Client } from "@libsql/client";
 import { istanbulDay } from "./study";
 import { getDashboard, getParticipant, getLatestSet, type StudyWord } from "./store";
 
-export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning">[]; learned: Pick<StudyWord, "term" | "meaning">[] }[] };
+export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning" | "repeatCount">[]; learned: Pick<StudyWord, "term" | "meaning" | "repeatCount">[] }[] };
 
 export function slotKey(date: Date): string | null {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).formatToParts(date);
   const hour = Number(parts.find((part) => part.type === "hour")?.value);
   if (!Number.isInteger(hour)) return null;
-  return istanbulDay(date) + "-" + String(Math.floor(hour / 4) * 4).padStart(2, "0");
+  return istanbulDay(date) + "-" + String(Math.floor(hour / 2) * 2).padStart(2, "0");
 }
 
 export function formatMessage(snapshot: ReminderSnapshot): string | null {
@@ -18,7 +18,7 @@ export function formatMessage(snapshot: ReminderSnapshot): string | null {
   for (const person of active) {
     if (person.remaining.length > 0) {
       lines.push("👤 " + person.name + " · kalan kelimeler");
-      for (const word of person.remaining) lines.push("• " + word.term + " — " + word.meaning);
+      for (const word of person.remaining) lines.push("• " + word.term + " — " + word.meaning + ` (${word.repeatCount} kere ezberlendi, kalan ezberlenme ${3 - word.repeatCount})`);
     } else {
       lines.push("✅ " + person.name + " · bugün tüm kelimeleri öğrendim");
       lines.push("Bugün öğrendiklerim:");
@@ -26,7 +26,7 @@ export function formatMessage(snapshot: ReminderSnapshot): string | null {
     }
     lines.push("");
   }
-  lines.push("Bir sonraki hatırlatma 4 saat sonra.");
+  lines.push("Bir sonraki hatırlatma 2 saat sonra.");
   return lines.join("\n");
 }
 
@@ -36,8 +36,8 @@ export async function buildSnapshot(db: Client, day: string): Promise<ReminderSn
     const dashboard = await getDashboard(db, Number(row.id), day);
     return {
       name: String(row.name),
-      remaining: dashboard.words.filter((word) => !word.checked).map(({ term, meaning }) => ({ term, meaning })),
-      learned: dashboard.words.filter((word) => word.checked).map(({ term, meaning }) => ({ term, meaning })),
+      remaining: dashboard.words.filter((word) => !word.checked).map(({ term, meaning, repeatCount }) => ({ term, meaning, repeatCount })),
+      learned: dashboard.words.filter((word) => word.checked).map(({ term, meaning, repeatCount }) => ({ term, meaning, repeatCount })),
     };
   })) };
 }

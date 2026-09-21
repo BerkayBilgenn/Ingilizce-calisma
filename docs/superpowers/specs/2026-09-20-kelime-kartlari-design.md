@@ -15,7 +15,7 @@
 
 ## WhatsApp gönderimi
 
-Mac'te çalışan ayrı bir gönderici, birinci numaranın gerçek WhatsApp hesabına QR kodla bağlanır. Kurucu mevcut gruplar arasından hedef grubu seçer. Gönderici her gün İstanbul saatiyle 00.00, 04.00, 08.00, 12.00, 16.00 ve 20.00 dilimlerinde sitenin korumalı uç noktasından iki kişinin güncel kalan ve o gün öğrendiği kelimeleri alır. Mesajda her kişinin seçtiği görünen ad kullanılır; telefon numaraları grup mesajında gösterilmez. Bir kişi tüm kelimeleri bitirdiyse kendi bölümünde tamamladığı ve o gün öğrendiği kelimeler yazılır. Aktif sette o gün hiç işaretlenmiş kelime yoksa mesaj gönderilmez.
+Mac'te çalışan ayrı bir gönderici, birinci numaranın gerçek WhatsApp hesabına QR kodla bağlanır. Kurucu mevcut gruplar arasından hedef grubu seçer. Gönderici her gün İstanbul saatiyle 00.00'dan başlayarak iki saatte bir sitenin korumalı uç noktasından iki kişinin güncel kalan ve o gün öğrendiği kelimeleri alır. Mesajda her kişinin seçtiği görünen ad kullanılır; telefon numaraları grup mesajında gösterilmez. Bir kişi tüm kelimeleri bitirdiyse kendi bölümünde tamamladığı ve o gün öğrendiği kelimeler yazılır. Aktif sette o gün hiç işaretlenmiş kelime yoksa mesaj gönderilmez.
 
 Gönderici aynı zaman diliminde tek mesaj hedefler. Gönderim sonucu kaydedilir; sonuç belirsizse otomatik yeniden deneme yapıp grubu aynı mesajla doldurmaz. Bir bağlantı kesintisi veya Mac'in uyku durumu yaşanırsa arayüzde son durum ve son başarılı gönderim gösterilir. Mac yeniden açıldığında geçmiş dilimlerin tamamı yollanmaz; sıradaki dilimde güncel kalan kelimeler gönderilir. Kurucu, mesaj önizlemesini ve bir defalık elle gönderme seçeneğini kullanabilir.
 
@@ -29,7 +29,7 @@ WhatsApp Web üzerinden otomasyon resmî bir entegrasyon değildir; WhatsApp'ın
 - **Güvenlik:** PIN'ler düz metin tutulmaz. Giriş denemeleri sınırlandırılır. Oturum çerezleri imzalı, `HttpOnly` ve yayın ortamında `Secure` olur. Katılımcı yalnızca kendi işaretlerini değiştirebilir. İlk kurulumun ve Mac göndericisinin uç noktaları farklı gizli anahtarlarla korunur; anahtarlar tarayıcıya gönderilmez.
 - **Saat ve tekrar:** Dört saatlik zaman dilimi anahtarı İstanbul gününe göre üretilir. Günlük işaretlerin tekilliği ve gönderim diliminin tekilliği veritabanında zorlanır.
 
-Vercel'in sürekli açık bir WhatsApp Web oturumu barındırmaması ve ücretsiz planda dört saatte bir cron çalıştırmaması nedeniyle zamanlayıcı Mac göndericisindedir. Sitedeki ilerleme ise Mac kapansa da veritabanında kalır.
+Vercel'in sürekli açık bir WhatsApp Web oturumu barındırmaması nedeniyle zamanlayıcı Mac göndericisindedir. Sitedeki ilerleme ise Mac kapansa da veritabanında kalır.
 
 ## Hata durumları
 
@@ -41,7 +41,7 @@ Vercel'in sürekli açık bir WhatsApp Web oturumu barındırmaması ve ücretsi
 
 ## Doğrulama
 
-Gün sınırları, yedi günlük bitiş, kişilerin birbirinden bağımsız işaretleri, dört saatlik mesaj içeriği ve aynı dilimde tekrar gönderimin engellenmesi test edilir. WhatsApp gönderimi sahte bir göndericiyle sınanır; gerçek gruba otomatik deneme mesajı atılmaz. Gerçek bağlantı, kurucunun QR kodu taraması ve grubu seçmesiyle ayrı bir son kontrol gerektirir.
+Gün sınırları, yedi günlük bitiş, kişilerin birbirinden bağımsız işaretleri, iki saatlik mesaj içeriği ve aynı dilimde tekrar gönderimin engellenmesi test edilir. WhatsApp gönderimi sahte bir göndericiyle sınanır; gerçek gruba otomatik deneme mesajı atılmaz. Gerçek bağlantı, kurucunun QR kodu taraması ve grubu seçmesiyle ayrı bir son kontrol gerektirir.
 
 ## Dağıtım koşulları
 

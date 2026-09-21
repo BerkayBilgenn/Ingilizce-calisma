@@ -23,6 +23,28 @@ export function getDb(): Client {
   return sharedDb;
 }
 
+async function addColumn(db: Client, table: string, column: string, definition: string): Promise<void> {
+  const columns = await db.execute(`PRAGMA table_info(${table})`);
+  if (!columns.rows.some((row) => row.name === column)) {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+const learningNoticesTable = `CREATE TABLE learning_notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  participant_id INTEGER NOT NULL REFERENCES participants(id),
+  word_id INTEGER NOT NULL REFERENCES words(id),
+  day TEXT NOT NULL,
+  repeat_count INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3),
+  message TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message_id TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT,
+  UNIQUE(participant_id, word_id, day, repeat_count)
+)`;
+
 export async function ensureSchema(db: Client = getDb()): Promise<void> {
   const statements = [
     `CREATE TABLE IF NOT EXISTS participants (
@@ -36,6 +58,8 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
     `CREATE TABLE IF NOT EXISTS sets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       start_day TEXT NOT NULL,
+      duration_days INTEGER NOT NULL DEFAULT 7,
+      program_key TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS words (
@@ -43,6 +67,10 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
       term TEXT NOT NULL,
       meaning TEXT NOT NULL,
+      pronunciation TEXT NOT NULL DEFAULT '',
+      level TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      scheduled_day INTEGER NOT NULL DEFAULT 1,
       position INTEGER NOT NULL,
       UNIQUE(set_id, term)
     )`,
@@ -55,6 +83,7 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
       day TEXT NOT NULL,
       checked_at TEXT NOT NULL,
+      repeat_count INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3),
       PRIMARY KEY(participant_id, word_id, day)
     )`,
     `CREATE TABLE IF NOT EXISTS send_runs (
@@ -66,19 +95,7 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       completed_at TEXT
     )`,
-    `CREATE TABLE IF NOT EXISTS learning_notices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      participant_id INTEGER NOT NULL REFERENCES participants(id),
-      word_id INTEGER NOT NULL REFERENCES words(id),
-      day TEXT NOT NULL,
-      message TEXT NOT NULL,
-      status TEXT NOT NULL,
-      message_id TEXT,
-      error TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      completed_at TEXT,
-      UNIQUE(participant_id, word_id, day)
-    )`,
+    learningNoticesTable.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS "),
     `CREATE TABLE IF NOT EXISTS login_attempts (
       phone_hash TEXT PRIMARY KEY,
       count INTEGER NOT NULL,
@@ -93,4 +110,30 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
     )`,
   ];
   for (const sql of statements) await db.execute(sql);
+  await addColumn(db, "sets", "duration_days", "INTEGER NOT NULL DEFAULT 7");
+  await addColumn(db, "sets", "program_key", "TEXT");
+  await addColumn(db, "words", "pronunciation", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "words", "level", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "words", "category", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "words", "scheduled_day", "INTEGER NOT NULL DEFAULT 1");
+  await addColumn(db, "daily_checks", "repeat_count", "INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3)");
+  await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS sets_program_key ON sets(program_key) WHERE program_key IS NOT NULL");
+
+  const noticeColumns = await db.execute("PRAGMA table_info(learning_notices)");
+  if (!noticeColumns.rows.some((row) => row.name === "repeat_count")) {
+    const tx = await db.transaction("write");
+    try {
+      await tx.execute("ALTER TABLE learning_notices RENAME TO learning_notices_legacy");
+      await tx.execute(learningNoticesTable);
+      await tx.execute(`INSERT INTO learning_notices
+        (id, participant_id, word_id, day, repeat_count, message, status, message_id, error, created_at, completed_at)
+        SELECT id, participant_id, word_id, day, 1, message, status, message_id, error, created_at, completed_at
+        FROM learning_notices_legacy`);
+      await tx.execute("DROP TABLE learning_notices_legacy");
+      await tx.commit();
+    } catch (error) {
+      await tx.rollback();
+      throw error;
+    }
+  }
 }

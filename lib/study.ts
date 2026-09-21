@@ -17,7 +17,7 @@ export function dayIndex(startDay: string, currentDay: string): number {
   return Math.round((current - start) / 86_400_000) + 1;
 }
 
-export function activeOn(startDay: string, currentDay: string): boolean {
+export function activeOn(startDay: string, currentDay: string, durationDays = 7): boolean {
   const day = dayIndex(startDay, currentDay);
-  return day >= 1 && day <= 7;
+  return day >= 1 && day <= durationDays;
 }

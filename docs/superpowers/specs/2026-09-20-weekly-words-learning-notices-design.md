@@ -15,7 +15,7 @@
 
 - İlk başarılı günlük işaretleme ile aynı veritabanı işleminde tek bir bildirim kaydı oluşur. Metin `📚 <ad> “<kelime>” kelimesini ezberledi.` biçimindedir; telefon numarası içermez.
 - Mac göndericisi Vercel'deki kuyruğu yaklaşık 10 saniyede bir kontrol eder. Bu, sürekli açık WhatsApp oturumuyla mümkün olan yakın zamanlı teslimdir; anlık teslim garantisi değildir.
-- Öğrenme bildirimleri dört saatlik toplu hatırlatmalardan ayrı kaydedilir. Her kişi, kelime ve gün için en çok bir bildirim gönderilir. İşaret geri alınırsa henüz gönderilmeyen bildirim iptal edilir. Sonradan tekrar işaretlenirse iptal edilmiş kayıt yeniden beklemeye alınabilir; gönderilmiş kayıt tekrarlanmaz.
+- Öğrenme bildirimleri iki saatlik toplu hatırlatmalardan ayrı kaydedilir. Her kişi, kelime ve gün için en çok bir bildirim gönderilir. İşaret geri alınırsa henüz gönderilmeyen bildirim iptal edilir. Sonradan tekrar işaretlenirse iptal edilmiş kayıt yeniden beklemeye alınabilir; gönderilmiş kayıt tekrarlanmaz.
 - Gönderici kapalıyken bekleyen bildirimler 30 dakika sonra sona erer; yeniden açıldığında eski bildirimler toplu gönderilmez. WhatsApp sonucu belirsizse otomatik tekrar yapılmaz.
 - Aktif listeden çıkarılan kelimeye ait bekleyen bildirimler iptal edilir.
 
@@ -29,4 +29,4 @@
 
 - İki kişi de ekleme/çıkarma yapabilir; çıkarma geçmişi korur; yanlış/çift kelime reddedilir.
 - İşaretleme tek bildirim oluşturur; tekrar tıklama, geri alma, yeniden işaretleme ve sona erme davranışları sınanır.
-- Gönderici öğrenme bildirimini dört saatlik mesaja karıştırmadan alır; belirsiz gönderimi yeniden denemez. Gerçek gruba test mesajı gönderilmez.
+- Gönderici öğrenme bildirimini iki saatlik mesaja karıştırmadan alır; belirsiz gönderimi yeniden denemez. Gerçek gruba test mesajı gönderilmez.
