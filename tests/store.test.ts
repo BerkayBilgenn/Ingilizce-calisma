@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ensureSchema } from "../lib/db";
-import { addActiveWord, authenticate, createInitialSetup, createSet, getDashboard, removeActiveWord, setDailyCheck } from "../lib/store";
+import { activateCurriculum, addActiveWord, authenticate, createInitialSetup, createSet, getDashboard, removeActiveWord, setDailyCheck } from "../lib/store";
+import { curriculumWords } from "../lib/curriculum";
 
 const directories: string[] = [];
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -22,6 +23,22 @@ const people = [
 ];
 
 describe("two-person study state", () => {
+  it("activates one 100-day curriculum and returns only the scheduled ten words", async () => {
+    const db = await database();
+    const [adminId] = await createInitialSetup(db, people);
+    const firstId = await activateCurriculum(db, "2026-09-21");
+    expect(await activateCurriculum(db, "2026-09-22")).toBe(firstId);
+    expect(Number((await db.execute("SELECT COUNT(*) AS count FROM sets WHERE program_key = 'english-1000-v1'")).rows[0].count)).toBe(1);
+    expect(Number((await db.execute({ sql: "SELECT COUNT(*) AS count FROM words WHERE set_id = ?", args: [firstId] })).rows[0].count)).toBe(1000);
+    const first = await getDashboard(db, adminId, "2026-09-21");
+    expect(first.set).toMatchObject({ dayNumber: 1, durationDays: 100, programKey: "english-1000-v1" });
+    expect(first.words.map((word) => word.term)).toEqual(curriculumWords.slice(0, 10).map((word) => word.term));
+    expect(first.words[0].pronunciation).toBe(curriculumWords[0].pronunciation);
+    const last = await getDashboard(db, adminId, "2026-12-29");
+    expect(last.words.map((word) => word.term)).toEqual(curriculumWords.slice(990).map((word) => word.term));
+    expect((await getDashboard(db, adminId, "2026-12-30")).set).toBeNull();
+    db.close();
+  });
   it("allows initial setup only once and authenticates each phone", async () => {
     const db = await database();
     await createInitialSetup(db, people);
