@@ -65,6 +65,7 @@ const scheduler = createScheduler({
     console.error("Hatırlatma gönderilemedi:", error);
     restartIfBrowserBroken(error);
   },
+  onSent: ({ slotKey }) => console.log("Zamanlanmış mesaj gönderildi:", slotKey),
 });
 
 async function sendNow() {

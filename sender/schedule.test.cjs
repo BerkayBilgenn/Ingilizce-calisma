@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const { claimPath, createScheduler } = require("./schedule.cjs");
+const { sendGroup } = require("./whatsapp.cjs");
 
 (async () => {
   const calls = [];
@@ -77,5 +79,51 @@ const { claimPath, createScheduler } = require("./schedule.cjs");
   assert.deepEqual(await secondSend, { skipped: true });
   releaseSends[0]({ messageId: "wa-1" });
   assert.deepEqual(await firstSend, { sent: true });
+
+  const sentSlots = [];
+  const observable = createScheduler({
+    now: () => new Date(),
+    claim: async () => ({ slotKey: "2026-09-21-22", message: "gece raporu" }),
+    send: async () => ({ messageId: "wa-22" }),
+    complete: async () => {},
+    onSent: (result) => sentSlots.push(result),
+  });
+  assert.deepEqual(await observable.tick(), { sent: true });
+  assert.deepEqual(sentSlots, [{ slotKey: "2026-09-21-22", messageId: "wa-22" }]);
+
+  const loggingCompletions = [];
+  const loggingFailure = createScheduler({
+    now: () => new Date(),
+    claim: async () => ({ slotKey: "slot-with-log-error", message: "rapor" }),
+    send: async () => ({ messageId: "sent-before-log-error" }),
+    complete: async (result) => loggingCompletions.push(result.status),
+    onSent: () => { throw new Error("log yazılamadı"); },
+  });
+  assert.deepEqual(await loggingFailure.tick(), { sent: true });
+  assert.deepEqual(loggingCompletions, ["sent"]);
+
+  const stuckClient = new EventEmitter();
+  stuckClient.sendMessage = async () => undefined;
+  stuckClient.getChatById = async () => new Promise(() => {});
+  let recoveryAttempt = 0;
+  const recoveryCompletions = [];
+  const recovering = createScheduler({
+    now: () => new Date(),
+    claim: async () => ({ slotKey: `slot-${++recoveryAttempt}`, message: "rapor" }),
+    send: async (message) => recoveryAttempt === 1
+      ? sendGroup(stuckClient, "group@g.us", message, { confirmTimeoutMs: 10, confirmAttempts: 1, historyTimeoutMs: 10 })
+      : { messageId: "recovered-message" },
+    complete: async (result) => recoveryCompletions.push(result),
+  });
+  const firstRecovery = await Promise.race([
+    recovering.tick(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("ilk zamanlayıcı dilimi takılı kaldı")), 200)),
+  ]);
+  assert.equal(firstRecovery.uncertain, true);
+  assert.deepEqual(await recovering.tick(), { sent: true });
+  assert.deepEqual(recoveryCompletions.map(({ slotKey, status }) => ({ slotKey, status })), [
+    { slotKey: "slot-1", status: "uncertain" },
+    { slotKey: "slot-2", status: "sent" },
+  ]);
   console.log("sender schedule tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
