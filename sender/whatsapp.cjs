@@ -73,22 +73,30 @@ function outgoingMatch(item, groupId, text, startedAt, allowMissingDestination =
   return destination === groupId || (allowMissingDestination && !destination);
 }
 
-function outgoingWatcher(client, groupId, text, startedAt, timeoutMs) {
-  if (typeof client.on !== "function" || typeof client.off !== "function") return { promise: Promise.resolve(null), stop() {} };
+function outgoingWatcher(client, groupId, text, startedAt) {
+  if (typeof client.on !== "function" || typeof client.off !== "function") return { wait: async () => null, stop() {} };
   let finish;
   const promise = new Promise((resolve) => {
     const handler = (item) => {
       if (outgoingMatch(item, groupId, text, startedAt)) finish(item);
     };
-    const timer = setTimeout(() => finish(null), timeoutMs);
     finish = (item) => {
-      clearTimeout(timer);
       client.off("message_create", handler);
       resolve(item);
     };
     client.on("message_create", handler);
   });
-  return { promise, stop() { finish(null); } };
+  return {
+    async wait(timeoutMs) {
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      try {
+        return await promise;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    stop() { finish(null); },
+  };
 }
 
 function confirmedMessage(item, allowSynthetic = false) {
@@ -98,18 +106,34 @@ function confirmedMessage(item, allowSynthetic = false) {
   return { messageId: id || `confirmed-${item.timestamp || Date.now()}` };
 }
 
+function withTimeout(operation, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(operation),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 async function sendGroup(client, groupId, text, {
+  sendTimeoutMs = 30000,
   confirmTimeoutMs = 15000,
   confirmAttempts = 6,
   confirmIntervalMs = 1000,
+  historyTimeoutMs = 5000,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 } = {}) {
   const startedAt = Math.floor(Date.now() / 1000);
-  const watcher = outgoingWatcher(client, groupId, text, startedAt, confirmTimeoutMs);
+  const watcher = outgoingWatcher(client, groupId, text, startedAt);
   let message;
   let sendError;
   try {
-    message = await client.sendMessage(groupId, text);
+    message = await withTimeout(
+      client.sendMessage(groupId, text),
+      sendTimeoutMs,
+      `WhatsApp gönderimi ${sendTimeoutMs} ms içinde tamamlanmadı.`,
+    );
   } catch (error) {
     sendError = error;
   }
@@ -118,13 +142,13 @@ async function sendGroup(client, groupId, text, {
     watcher.stop();
     return returned;
   }
-  const eventMessage = confirmedMessage(await watcher.promise, true);
+  const eventMessage = confirmedMessage(await watcher.wait(confirmTimeoutMs), true);
   if (eventMessage) return eventMessage;
   if (typeof client.getChatById === "function") {
     for (let attempt = 0; attempt < confirmAttempts; attempt += 1) {
       try {
-        const chat = await client.getChatById(groupId);
-        const recent = await chat?.fetchMessages({ limit: 30 });
+        const chat = await withTimeout(client.getChatById(groupId), historyTimeoutMs, "WhatsApp sohbet geçmişi açılamadı.");
+        const recent = await withTimeout(chat?.fetchMessages({ limit: 30 }), historyTimeoutMs, "WhatsApp mesaj geçmişi okunamadı.");
         const confirmed = recent?.find((item) => outgoingMatch(item, groupId, text, startedAt, true));
         const result = confirmedMessage(confirmed, true);
         if (result) return result;

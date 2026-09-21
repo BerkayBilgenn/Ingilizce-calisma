@@ -1,4 +1,4 @@
-function createScheduler({ now, claim, send, complete, notBefore = 0, onFailure = (error) => console.error("Hatırlatma gönderilemedi:", error), intervalMs = 30000 }) {
+function createScheduler({ now, claim, send, complete, notBefore = 0, onFailure = (error) => console.error("Hatırlatma gönderilemedi:", error), onSent = () => {}, intervalMs = 30000 }) {
   let timer;
   let lastFailure;
   let inFlight = false;
@@ -17,6 +17,9 @@ function createScheduler({ now, claim, send, complete, notBefore = 0, onFailure 
       try {
         const result = await send(claimed.message);
         await complete({ slotKey: claimed.slotKey, status: "sent", messageId: result.messageId });
+        try {
+          await onSent({ slotKey: claimed.slotKey, messageId: result.messageId });
+        } catch { /* Observability must never overwrite a confirmed delivery. */ }
         return { sent: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
