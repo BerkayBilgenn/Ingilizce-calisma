@@ -26,7 +26,7 @@
 ### Task 1: Import and validate the 1,000-word curriculum
 
 **Files:**
-- Create: `data/curriculum.json`
+- Create: `content/curriculum.json`
 - Create: `lib/curriculum.ts`
 - Create: `tests/curriculum.test.ts`
 
@@ -67,7 +67,7 @@ Expected: FAIL resolving `../lib/curriculum`.
 Run this one-time conversion from the repository root:
 
 ```bash
-python3 -c 'import csv,json; src="/Users/kberkaybilgenn/Downloads/ingilizce-1000-kelime.csv"; rows=list(csv.DictReader(open(src,encoding="utf-8-sig",newline=""))); assert len(rows)==1000; data=[{"term":r["İngilizce"].strip(),"meaning":r["Türkçe"].strip(),"pronunciation":r["Okunuş"].strip(),"level":r["Seviye"].strip(),"category":r["Kategori"].strip(),"dayNumber":i//10+1,"position":i} for i,r in enumerate(rows)]; open("data/curriculum.json","w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=2)+"\n")'
+python3 -c 'import csv,json; src="/Users/kberkaybilgenn/Downloads/ingilizce-1000-kelime.csv"; rows=list(csv.DictReader(open(src,encoding="utf-8-sig",newline=""))); assert len(rows)==1000; data=[{"term":r["İngilizce"].strip(),"meaning":r["Türkçe"].strip(),"pronunciation":r["Okunuş"].strip(),"level":r["Seviye"].strip(),"category":r["Kategori"].strip(),"dayNumber":i//10+1,"position":i} for i,r in enumerate(rows)]; open("content/curriculum.json","w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=2)+"\n")'
 ```
 
 - [ ] **Step 4: Add the typed curriculum module**
@@ -98,7 +98,7 @@ Expected: 2 tests PASS.
 - [ ] **Step 6: Commit the validated source asset**
 
 ```bash
-git add data/curriculum.json lib/curriculum.ts tests/curriculum.test.ts
+git add content/curriculum.json lib/curriculum.ts tests/curriculum.test.ts
 git commit -m "feat: add 100 day word curriculum"
 ```
 
