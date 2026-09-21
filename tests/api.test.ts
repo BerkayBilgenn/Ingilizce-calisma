@@ -57,7 +57,7 @@ it("protects setup and derives check identity from the login cookie", async () =
   const adminLogin = await login.POST(request("/api/login", { phone: people[0].phone, pin: people[0].pin }));
   const adminCookie = adminLogin.headers.get("set-cookie")?.split(";")[0];
   const created = await sets.POST(request("/api/sets", { words: [{ term: "apple", meaning: "elma" }] }, adminCookie));
-  expect(created.status).toBe(200);
+  expect(created.status).toBe(400);
   const { getDb } = await import("../lib/db");
   const { getDashboard } = await import("../lib/store");
   const { istanbulDay } = await import("../lib/study");
@@ -67,12 +67,12 @@ it("protects setup and derives check identity from the login cookie", async () =
   const firstRepeat = await checks.POST(request("/api/checks", { wordId, checked: true, participantId: 1 }, memberCookie));
   expect(firstRepeat.status).toBe(200);
   expect(await firstRepeat.json()).toMatchObject({ repeatCount: 1 });
-  expect((await getDashboard(db, 1, day)).remaining).toBe(1);
-  expect((await getDashboard(db, 2, day)).remaining).toBe(1);
+  expect((await getDashboard(db, 1, day)).remaining).toBe(10);
+  expect((await getDashboard(db, 2, day)).remaining).toBe(10);
   await checks.POST(request("/api/checks", { wordId, checked: true }, memberCookie));
   const thirdRepeat = await checks.POST(request("/api/checks", { wordId, checked: true }, memberCookie));
   expect(await thirdRepeat.json()).toMatchObject({ repeatCount: 3 });
-  expect((await getDashboard(db, 2, day)).remaining).toBe(0);
+  expect((await getDashboard(db, 2, day)).remaining).toBe(9);
   db.close();
 });
 
@@ -109,7 +109,7 @@ it("reports a missing session secret as a configuration error during login", asy
   expect(await response.json()).toEqual({ error: "Vercel ayarlarında SESSION_SECRET eksik veya çok kısa." });
 });
 
-it("lets both signed-in participants add and remove words in the current set", async () => {
+it("keeps the fixed curriculum read-only for both signed-in participants", async () => {
   directory = mkdtempSync(join(tmpdir(), "kelime-api-words-"));
   process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
   process.env.SETUP_SECRET = "setup-secret-for-test";
@@ -125,12 +125,11 @@ it("lets both signed-in participants add and remove words in the current set", a
   await setup.POST(request("/api/setup", { people, secret: process.env.SETUP_SECRET }));
   const adminCookie = (await login.POST(request("/api/login", people[0]))).headers.get("set-cookie")?.split(";")[0];
   const memberCookie = (await login.POST(request("/api/login", people[1]))).headers.get("set-cookie")?.split(";")[0];
-  expect((await sets.POST(request("/api/sets", { words: [{ term: "apple", meaning: "elma" }] }, adminCookie))).status).toBe(200);
+  expect((await sets.POST(request("/api/sets", { words: [{ term: "apple", meaning: "elma" }] }, adminCookie))).status).toBe(400);
   expect((await words.POST(request("/api/words", { term: "book", meaning: "kitap" }))).status).toBe(401);
   const added = await words.POST(request("/api/words", { term: "book", meaning: "kitap" }, memberCookie));
-  expect(added.status).toBe(200);
-  const { wordId } = await added.json();
-  expect((await words.DELETE(new NextRequest("http://localhost:3000/api/words", { method: "DELETE", headers: { "content-type": "application/json", cookie: adminCookie || "" }, body: JSON.stringify({ wordId }) }))).status).toBe(200);
+  expect(added.status).toBe(400);
+  expect((await words.DELETE(new NextRequest("http://localhost:3000/api/words", { method: "DELETE", headers: { "content-type": "application/json", cookie: adminCookie || "" }, body: JSON.stringify({ wordId: 1 }) }))).status).toBe(400);
 });
 
 it("offers a new learning notice to the sender before a two-hour reminder", async () => {
@@ -151,16 +150,17 @@ it("offers a new learning notice to the sender before a two-hour reminder", asyn
   ];
   await setup.POST(request("/api/setup", { people, secret: process.env.SETUP_SECRET }));
   const adminCookie = (await login.POST(request("/api/login", people[0]))).headers.get("set-cookie")?.split(";")[0];
-  await sets.POST(request("/api/sets", { words: [{ term: "apple", meaning: "elma" }] }, adminCookie));
   const { getDb } = await import("../lib/db");
+  const { getDashboard } = await import("../lib/store");
+  const { istanbulDay } = await import("../lib/study");
   const db = getDb();
-  const wordId = Number((await db.execute("SELECT id FROM words LIMIT 1")).rows[0].id);
+  const wordId = (await getDashboard(db, 1, istanbulDay(new Date()))).words[0].id;
   await checks.POST(request("/api/checks", { wordId, checked: true }, adminCookie));
   const senderRequest = (path: string, body?: unknown) => new NextRequest(`http://localhost:3000${path}`, { method: "POST", headers: { authorization: `Bearer ${process.env.AGENT_SECRET}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const claimed = await claim.POST(senderRequest("/api/agent/claim"));
   const payload = await claimed.json();
   expect(payload.slotKey).toMatch(/^notice-\d+$/);
-  expect(payload.message).toBe("📚 Ada “apple” kelimesini 1/3 kez tekrar etti.");
+  expect(payload.message).toBe("📚 Ada “accept” kelimesini 1 kez ezberledi. 2 tekrar kaldı.");
   expect((await complete.POST(senderRequest("/api/agent/complete", { slotKey: payload.slotKey, status: "sent", messageId: "wa-1" }))).status).toBe(200);
   expect((await db.execute("SELECT status FROM learning_notices")).rows[0].status).toBe("sent");
   expect(await (await claim.POST(senderRequest("/api/agent/claim?noticesOnly=1"))).json()).toEqual({ skip: true, reason: "scheduled_paused" });

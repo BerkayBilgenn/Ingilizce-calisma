@@ -19,6 +19,10 @@ export type Dashboard = {
 
 function rowNumber(value: unknown): number { return Number(value); }
 function rowString(value: unknown): string { return String(value); }
+function repeatNotice(name: string, term: string, count: number): string {
+  if (count === 3) return `⭐ ${name} “${term}” kelimesini bugün 3 kez ezberledi. Tamamlandı!`;
+  return `📚 ${name} “${term}” kelimesini ${count} kez ezberledi. ${3 - count} tekrar kaldı.`;
+}
 
 export async function createInitialSetup(db: Client, people: PersonInput[]): Promise<[number, number]> {
   if (people.length !== 2) throw new Error("Exactly two people are required");
@@ -251,22 +255,25 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
               ON CONFLICT(participant_id, word_id, day) DO UPDATE SET repeat_count = min(daily_checks.repeat_count + 1, 3), checked_at = excluded.checked_at`,
         args: [participantId, wordId, day, new Date().toISOString()],
       });
-      if (count === 0) {
-        const message = `📚 ${person.name} “${String(word.rows[0].term)}” kelimesini 1/3 kez tekrar etti.`;
+      if (nextCount > count) {
+        const message = repeatNotice(person.name, String(word.rows[0].term), nextCount);
         await tx.execute({
-          sql: `INSERT INTO learning_notices (participant_id, word_id, day, repeat_count, message, status) VALUES (?, ?, ?, 1, ?, 'pending')
+          sql: `INSERT INTO learning_notices (participant_id, word_id, day, repeat_count, message, status) VALUES (?, ?, ?, ?, ?, 'pending')
                 ON CONFLICT(participant_id, word_id, day, repeat_count) DO UPDATE SET
                 status = CASE WHEN learning_notices.status = 'cancelled' THEN 'pending' ELSE learning_notices.status END,
+                message = excluded.message,
                 created_at = CASE WHEN learning_notices.status = 'cancelled' THEN CURRENT_TIMESTAMP ELSE learning_notices.created_at END`,
-          args: [participantId, wordId, day, message],
+          args: [participantId, wordId, day, nextCount, message],
         });
       }
     } else {
       if (nextCount === 0) {
         await tx.execute({ sql: "DELETE FROM daily_checks WHERE participant_id = ? AND word_id = ? AND day = ?", args: [participantId, wordId, day] });
-        await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND status = 'pending'", args: [participantId, wordId, day] });
       } else {
         await tx.execute({ sql: "UPDATE daily_checks SET repeat_count = ? WHERE participant_id = ? AND word_id = ? AND day = ?", args: [nextCount, participantId, wordId, day] });
+      }
+      if (count > 0) {
+        await tx.execute({ sql: "UPDATE learning_notices SET status = 'cancelled' WHERE participant_id = ? AND word_id = ? AND day = ? AND repeat_count = ? AND status = 'pending'", args: [participantId, wordId, day, count] });
       }
     }
     await tx.commit();

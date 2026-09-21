@@ -112,29 +112,36 @@ describe("two-person study state", () => {
     db.close();
   });
 
-  it("queues one learning notice, cancels it on undo, and restores it on recheck", async () => {
+  it("queues each repeat notice, cancels an undone pending repeat, and never duplicates a sent repeat", async () => {
     const db = await database();
     const [adminId] = await createInitialSetup(db, people);
     await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
     const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
     await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
     await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
-    let result = await db.execute("SELECT message, status FROM learning_notices");
-    expect(result.rows.length).toBe(1);
-    expect(result.rows[0].message).toBe("📚 Ada “apple” kelimesini 1/3 kez tekrar etti.");
-    expect(result.rows[0].status).toBe("pending");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    let result = await db.execute("SELECT repeat_count, message, status FROM learning_notices ORDER BY repeat_count");
+    expect(result.rows.map((row) => row.message)).toEqual([
+      "📚 Ada “apple” kelimesini 1 kez ezberledi. 2 tekrar kaldı.",
+      "📚 Ada “apple” kelimesini 2 kez ezberledi. 1 tekrar kaldı.",
+      "⭐ Ada “apple” kelimesini bugün 3 kez ezberledi. Tamamlandı!",
+    ]);
+    expect(result.rows.length).toBe(3);
     await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
-    expect((await getDashboard(db, adminId, "2026-09-20")).words[0].repeatCount).toBe(1);
-    await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
-    result = await db.execute("SELECT status FROM learning_notices");
+    expect((await getDashboard(db, adminId, "2026-09-20")).words[0].repeatCount).toBe(2);
+    result = await db.execute("SELECT status FROM learning_notices WHERE repeat_count = 3");
     expect(result.rows[0].status).toBe("cancelled");
     await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
-    result = await db.execute("SELECT status FROM learning_notices");
-    expect(result.rows.length).toBe(1);
+    result = await db.execute("SELECT status FROM learning_notices WHERE repeat_count = 3");
     expect(result.rows[0].status).toBe("pending");
+    await db.execute("UPDATE learning_notices SET status = 'sent' WHERE repeat_count = 3");
+    await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    expect((await db.execute("SELECT status FROM learning_notices WHERE repeat_count = 3")).rows[0].status).toBe("sent");
     await removeActiveWord(db, adminId, wordId, "2026-09-20");
-    result = await db.execute("SELECT status FROM learning_notices");
-    expect(result.rows[0].status).toBe("cancelled");
+    result = await db.execute("SELECT repeat_count, status FROM learning_notices ORDER BY repeat_count");
+    expect(result.rows.map((row) => row.status)).toEqual(["cancelled", "cancelled", "sent"]);
     db.close();
   });
 
