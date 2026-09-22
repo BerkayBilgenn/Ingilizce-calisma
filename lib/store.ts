@@ -8,6 +8,7 @@ export type PersonInput = { phone: string; name: string; pin: string };
 export type WordInput = { term: string; meaning: string };
 export type Participant = { id: number; phone: string; name: string; role: "admin" | "member" };
 export type StudyWord = { id: number; term: string; meaning: string; pronunciation: string; level: string; category: string; repeatCount: number; checked: boolean };
+export type LearnedWord = { id: number; term: string; meaning: string; pronunciation: string; learnedDay: string; learnedAt: string };
 export type Dashboard = {
   person: Participant;
   set: { id: number; startDay: string; dayNumber: number; durationDays: number; programKey: string | null } | null;
@@ -112,6 +113,7 @@ export async function activateCurriculum(db: Client, startDay: string, randomInd
     }
 
     await tx.execute("DELETE FROM learning_notices");
+    await tx.execute("DELETE FROM learned_words");
     await tx.execute("DELETE FROM daily_checks");
     await tx.execute("DELETE FROM word_removals");
     await tx.execute("DELETE FROM words");
@@ -260,6 +262,25 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   };
 }
 
+export async function getLearnedWords(db: Client, participantId: number): Promise<LearnedWord[]> {
+  const person = await getParticipant(db, participantId);
+  if (!person) throw new Error("Participant not found");
+  const result = await db.execute({
+    sql: `SELECT w.id, w.term, w.meaning, w.pronunciation, l.learned_day, l.learned_at
+          FROM learned_words l JOIN words w ON w.id = l.word_id
+          WHERE l.participant_id = ? ORDER BY l.learned_at DESC, w.position`,
+    args: [participantId],
+  });
+  return result.rows.map((row) => ({
+    id: rowNumber(row.id),
+    term: rowString(row.term),
+    meaning: rowString(row.meaning),
+    pronunciation: rowString(row.pronunciation),
+    learnedDay: rowString(row.learned_day),
+    learnedAt: rowString(row.learned_at),
+  }));
+}
+
 export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<number> {
   const person = await getParticipant(db, participantId);
   const latest = await getLatestSet(db);
@@ -288,6 +309,12 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
                 created_at = CASE WHEN learning_notices.status = 'cancelled' THEN CURRENT_TIMESTAMP ELSE learning_notices.created_at END`,
           args: [participantId, wordId, day, nextCount, message],
         });
+        if (nextCount === 3) {
+          await tx.execute({
+            sql: "INSERT OR IGNORE INTO learned_words (participant_id, word_id, learned_day, learned_at) VALUES (?, ?, ?, ?)",
+            args: [participantId, wordId, day, new Date().toISOString()],
+          });
+        }
       }
     } else {
       if (nextCount === 0) {

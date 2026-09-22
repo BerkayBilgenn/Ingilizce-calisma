@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ensureSchema } from "../lib/db";
-import { activateCurriculum, addActiveWord, authenticate, createInitialSetup, createSet, getDashboard, removeActiveWord, setDailyCheck } from "../lib/store";
+import { activateCurriculum, addActiveWord, authenticate, createInitialSetup, createSet, getDashboard, getLearnedWords, removeActiveWord, setDailyCheck } from "../lib/store";
 import { curriculumWords } from "../lib/curriculum";
 
 const directories: string[] = [];
@@ -84,6 +84,24 @@ describe("two-person study state", () => {
     await setDailyCheck(db, adminId, first.words[0].id, false, "2026-09-20");
     expect((await getDashboard(db, adminId, "2026-09-20")).remaining).toBe(2);
     expect((await getDashboard(db, adminId, "2026-09-20")).words[0]).toMatchObject({ repeatCount: 2, checked: false });
+    db.close();
+  });
+
+  it("archives a word at three repeats and keeps it after undo", async () => {
+    const db = await database();
+    const [adminId, memberId] = await createInitialSetup(db, people);
+    await createSet(db, adminId, [{ term: "apple", meaning: "elma" }], "2026-09-20");
+    const wordId = (await getDashboard(db, adminId, "2026-09-20")).words[0].id;
+
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, true, "2026-09-20");
+    await setDailyCheck(db, adminId, wordId, false, "2026-09-20");
+
+    expect(await getLearnedWords(db, adminId)).toEqual([
+      expect.objectContaining({ id: wordId, term: "apple", meaning: "elma", learnedDay: "2026-09-20" }),
+    ]);
+    expect(await getLearnedWords(db, memberId)).toEqual([]);
     db.close();
   });
 
