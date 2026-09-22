@@ -8,6 +8,7 @@ import WordEditor from "./word-editor";
 import AppMenu, { type AppView } from "./app-menu";
 import QuizView from "./quiz-view";
 import ArchiveView from "./archive-view";
+import LoveLetter from "./love-letter";
 
 type Props = { setupNeeded: boolean; initial: Dashboard | null; today: string };
 
@@ -179,7 +180,10 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
           <h1>Küçük tekrarlar,<br /><em>kalıcı kelimeler.</em></h1>
           <p>Her kelimeyi günde üç kez işaretle. Üç yıldız dolduğunda bugünkü çalışma tamamlanır.</p>
         </div>
-        <div className="hero-accent" aria-hidden="true"><span>learn</span><strong>öğren</strong><i>↗</i></div>
+        <div className="hero-side">
+          <div className="hero-accent" aria-hidden="true"><span>learn</span><strong>öğren</strong><i>↗</i></div>
+          <LoveLetter />
+        </div>
       </section>
 
       {initial.set ? <>
