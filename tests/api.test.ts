@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 
 let directory: string | undefined;
 afterEach(() => {
+  vi.useRealTimers();
   vi.resetModules();
   delete process.env.DATABASE_URL;
   delete process.env.SETUP_SECRET;
@@ -13,6 +14,44 @@ afterEach(() => {
   delete process.env.AGENT_SECRET;
   if (directory) rmSync(directory, { recursive: true, force: true });
   directory = undefined;
+});
+
+it("claims a learning notice, then the midnight archive, then the regular status", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-21T21:10:00.000Z"));
+  directory = mkdtempSync(join(tmpdir(), "kelime-api-midnight-"));
+  process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
+  process.env.SETUP_SECRET = "setup-secret-for-test";
+  process.env.SESSION_SECRET = "session-secret-for-test-long-enough";
+  process.env.AGENT_SECRET = "agent-secret-for-test";
+  const setup = await import("../app/api/setup/route");
+  const claim = await import("../app/api/agent/claim/route");
+  const complete = await import("../app/api/agent/complete/route");
+  const people = [
+    { phone: "0537 000 00 00", name: "Ada", pin: "123456" },
+    { phone: "0532 000 00 00", name: "Deniz", pin: "654321" },
+  ];
+  await setup.POST(request("/api/setup", { people, secret: process.env.SETUP_SECRET }));
+  const { getDb } = await import("../lib/db");
+  const { getDashboard } = await import("../lib/store");
+  const { readyDb } = await import("../lib/server");
+  await readyDb();
+  const db = getDb();
+  const word = (await getDashboard(db, 1, "2026-09-22")).words[0];
+  await db.execute({ sql: "INSERT INTO learned_words (participant_id, word_id, learned_day) VALUES (1, ?, '2026-09-22')", args: [word.id] });
+  await db.execute({ sql: "INSERT INTO learning_notices (participant_id, word_id, day, repeat_count, message, status) VALUES (1, ?, '2026-09-22', 1, 'önce bildirim', 'pending')", args: [word.id] });
+  const senderRequest = (path: string, body?: unknown) => new NextRequest(`http://localhost:3000${path}`, { method: "POST", headers: { authorization: `Bearer ${process.env.AGENT_SECRET}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+
+  const notice = await (await claim.POST(senderRequest("/api/agent/claim"))).json();
+  expect(notice.message).toBe("önce bildirim");
+  await complete.POST(senderRequest("/api/agent/complete", { slotKey: notice.slotKey, status: "sent" }));
+  const midnight = await (await claim.POST(senderRequest("/api/agent/claim"))).json();
+  expect(midnight.slotKey).toBe("midnight-2026-09-22");
+  expect(midnight.message).toContain(`${word.term} — ${word.meaning}`);
+  await complete.POST(senderRequest("/api/agent/complete", { slotKey: midnight.slotKey, status: "sent" }));
+  const regular = await (await claim.POST(senderRequest("/api/agent/claim"))).json();
+  expect(regular.slotKey).toBe("2026-09-22-00");
+  db.close();
 });
 
 function request(path: string, data: unknown, cookie?: string): NextRequest {

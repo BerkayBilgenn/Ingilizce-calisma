@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildSnapshot, claimLearningNotice, claimSlot, formatMessage, slotKey } from "@/lib/agent";
+import { buildArchiveSnapshot, buildSnapshot, claimLearningNotice, claimSlot, formatArchiveMessage, formatMessage, midnightSlotKey, slotKey } from "@/lib/agent";
 import { istanbulDay } from "@/lib/study";
 import { readyDb, secureMatch } from "@/lib/server";
 
@@ -14,6 +14,13 @@ export async function POST(request: NextRequest) {
     if (notice) return NextResponse.json(notice);
   }
   if (!force && request.nextUrl.searchParams.get("noticesOnly") === "1") return NextResponse.json({ skip: true, reason: "scheduled_paused" });
+  if (!force) {
+    const midnightKey = midnightSlotKey(now);
+    if (midnightKey) {
+      const midnightMessage = formatArchiveMessage(await buildArchiveSnapshot(db, istanbulDay(now)));
+      if (await claimSlot(db, midnightKey, midnightMessage)) return NextResponse.json({ slotKey: midnightKey, message: midnightMessage });
+    }
+  }
   const key = force ? `manual-${now.getTime()}` : slotKey(now);
   if (!key) return NextResponse.json({ skip: true, reason: "slot_closed" });
   const message = formatMessage(await buildSnapshot(db, istanbulDay(now)));

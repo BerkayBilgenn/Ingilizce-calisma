@@ -1,14 +1,24 @@
 import type { Client } from "@libsql/client";
 import { istanbulDay } from "./study";
-import { getDashboard, getParticipant, getLatestSet, type StudyWord } from "./store";
+import { getDashboard, getLearnedWords, type LearnedWord, type StudyWord } from "./store";
 
 export type ReminderSnapshot = { day: string; people: { name: string; remaining: Pick<StudyWord, "term" | "meaning" | "repeatCount">[]; learned: Pick<StudyWord, "term" | "meaning" | "repeatCount">[] }[] };
+export type ArchiveSnapshot = { day: string; people: { name: string; words: Pick<LearnedWord, "term" | "meaning">[] }[] };
 
-export function slotKey(date: Date): string | null {
+function istanbulHour(date: Date): number | null {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).formatToParts(date);
   const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  if (!Number.isInteger(hour)) return null;
+  return Number.isInteger(hour) ? hour : null;
+}
+
+export function slotKey(date: Date): string | null {
+  const hour = istanbulHour(date);
+  if (hour === null) return null;
   return istanbulDay(date) + "-" + String(Math.floor(hour / 2) * 2).padStart(2, "0");
+}
+
+export function midnightSlotKey(date: Date): string | null {
+  return istanbulHour(date) === 0 ? `midnight-${istanbulDay(date)}` : null;
 }
 
 export function formatMessage(snapshot: ReminderSnapshot): string | null {
@@ -40,6 +50,28 @@ export async function buildSnapshot(db: Client, day: string): Promise<ReminderSn
       learned: dashboard.words.filter((word) => word.checked).map(({ term, meaning, repeatCount }) => ({ term, meaning, repeatCount })),
     };
   })) };
+}
+
+export async function buildArchiveSnapshot(db: Client, day: string): Promise<ArchiveSnapshot> {
+  const people = await db.execute("SELECT id, name FROM participants ORDER BY id");
+  return {
+    day,
+    people: await Promise.all(people.rows.slice(0, 2).map(async (row) => ({
+      name: String(row.name),
+      words: (await getLearnedWords(db, Number(row.id))).map(({ term, meaning }) => ({ term, meaning })),
+    }))),
+  };
+}
+
+export function formatArchiveMessage(snapshot: ArchiveSnapshot): string {
+  const lines = [`🌙 Gece kelime arşivi · ${snapshot.day}`, "", "Bugüne kadar öğrenilen kelimeler:", ""];
+  for (const person of snapshot.people) {
+    lines.push(`👤 ${person.name} · ${person.words.length} kelime`);
+    if (person.words.length === 0) lines.push("Henüz arşivlenen kelime yok.");
+    else for (const word of person.words) lines.push(`• ${word.term} — ${word.meaning}`);
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
 }
 
 export async function claimSlot(db: Client, key: string, message: string | null): Promise<boolean> {
