@@ -5,6 +5,9 @@ import type { Dashboard, StudyWord } from "@/lib/store";
 import { millisecondsUntilNextIstanbulDay } from "@/lib/study";
 import StarBurst from "./star-burst";
 import WordEditor from "./word-editor";
+import AppMenu, { type AppView } from "./app-menu";
+import QuizView from "./quiz-view";
+import ArchiveView from "./archive-view";
 
 type Props = { setupNeeded: boolean; initial: Dashboard | null; today: string };
 
@@ -120,6 +123,7 @@ function LoginForm() {
 }
 
 function DashboardView({ initial, today }: { initial: Dashboard; today: string }) {
+  const [view, setView] = useState<AppView>("study");
   const [words, setWords] = useState(initial.words);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<number | null>(null);
@@ -164,10 +168,11 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
     <header className="site-header">
       <div className="header-inner">
         <Logo />
-        <div className="header-actions"><span className="header-name">Merhaba, {initial.person.name}</span><button className="text-button" onClick={logout}>Çıkış yap</button></div>
+        <div className="header-actions"><AppMenu view={view} onSelect={setView} /><span className="header-name">Merhaba, {initial.person.name}</span><button className="text-button" onClick={logout}>Çıkış yap</button></div>
       </div>
     </header>
     <main className="dashboard">
+      {view === "quiz" ? <QuizView /> : view === "archive" ? <ArchiveView /> : <>
       <section className="welcome">
         <div>
           <span className="eyebrow">BUGÜNÜN ÇALIŞMASI · {new Date(`${today}T12:00:00Z`).toLocaleDateString("tr-TR", { day: "numeric", month: "long" })}</span>
@@ -208,6 +213,7 @@ function DashboardView({ initial, today }: { initial: Dashboard; today: string }
         </section>}
         {!initial.set.programKey && <WordEditor words={words} />}
       </> : <section className="panel empty-work"><span className="eyebrow">100 GÜNLÜK YOLCULUK</span><h2>Program tamamlandı.</h2><p>1.000 kelimeyi 100 güne bölerek tamamladınız.</p></section>}
+      </>}
 
       <footer className="site-footer"><span>Her gün bir adım. Yüz günde sağlam bir tekrar.</span><span>İkra & Berkay © 2026</span></footer>
     </main>
