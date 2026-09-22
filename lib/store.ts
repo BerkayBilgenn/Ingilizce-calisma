@@ -8,6 +8,11 @@ export type PersonInput = { phone: string; name: string; pin: string };
 export type WordInput = { term: string; meaning: string };
 export type Participant = { id: number; phone: string; name: string; role: "admin" | "member" };
 export type StudyWord = { id: number; term: string; meaning: string; pronunciation: string; level: string; category: string; repeatCount: number; checked: boolean };
+export type LearnedWord = { id: number; term: string; meaning: string; pronunciation: string; learnedDay: string; learnedAt: string };
+export type QuizDaySummary = { day: number; wordCount: number; answered: number; correct: number };
+export type QuizQuestion = { wordId: number; term: string; pronunciation: string; options: string[] };
+export type QuizAttempt = { id: number; wordId: number; term: string; selectedMeaning: string; correctMeaning: string; correct: boolean; attemptedAt: string };
+export type QuizDay = { day: number; questions: QuizQuestion[]; history: QuizAttempt[] };
 export type Dashboard = {
   person: Participant;
   set: { id: number; startDay: string; dayNumber: number; durationDays: number; programKey: string | null } | null;
@@ -112,6 +117,8 @@ export async function activateCurriculum(db: Client, startDay: string, randomInd
     }
 
     await tx.execute("DELETE FROM learning_notices");
+    await tx.execute("DELETE FROM quiz_attempts");
+    await tx.execute("DELETE FROM learned_words");
     await tx.execute("DELETE FROM daily_checks");
     await tx.execute("DELETE FROM word_removals");
     await tx.execute("DELETE FROM words");
@@ -260,6 +267,134 @@ export async function getDashboard(db: Client, participantId: number, day: strin
   };
 }
 
+export async function getLearnedWords(db: Client, participantId: number): Promise<LearnedWord[]> {
+  const person = await getParticipant(db, participantId);
+  if (!person) throw new Error("Participant not found");
+  const result = await db.execute({
+    sql: `SELECT w.id, w.term, w.meaning, w.pronunciation, l.learned_day, l.learned_at
+          FROM learned_words l JOIN words w ON w.id = l.word_id
+          WHERE l.participant_id = ? ORDER BY l.learned_at DESC, w.position`,
+    args: [participantId],
+  });
+  return result.rows.map((row) => ({
+    id: rowNumber(row.id),
+    term: rowString(row.term),
+    meaning: rowString(row.meaning),
+    pronunciation: rowString(row.pronunciation),
+    learnedDay: rowString(row.learned_day),
+    learnedAt: rowString(row.learned_at),
+  }));
+}
+
+function openQuizDay(set: { startDay: string; durationDays: number }, day: string): number {
+  return Math.min(Math.max(dayIndex(set.startDay, day), 0), set.durationDays);
+}
+
+function seededNumber(value: string): number {
+  return createHash("sha256").update(value).digest().readUInt32BE(0);
+}
+
+function deterministicShuffle<T>(items: T[], seed: string): T[] {
+  return [...items].sort((left, right) => {
+    const a = seededNumber(`${seed}:${JSON.stringify(left)}`);
+    const b = seededNumber(`${seed}:${JSON.stringify(right)}`);
+    return a - b;
+  });
+}
+
+function optionsForQuestion(allMeanings: string[], correctMeaning: string, participantId: number, wordId: number, quizDay: number): string[] {
+  const distractors = deterministicShuffle(
+    [...new Set(allMeanings)].filter((meaning) => meaning !== correctMeaning),
+    `distractors:${participantId}:${wordId}:${quizDay}`,
+  ).slice(0, 3);
+  if (distractors.length < 3) throw new Error("Quiz için yeterli farklı kelime yok.");
+  return deterministicShuffle([correctMeaning, ...distractors], `options:${participantId}:${wordId}:${quizDay}`);
+}
+
+export async function getQuizOverview(db: Client, participantId: number, day: string): Promise<QuizDaySummary[]> {
+  const person = await getParticipant(db, participantId);
+  const set = await getLatestSet(db);
+  if (!person || !set) return [];
+  const opened = openQuizDay(set, day);
+  if (opened < 1) return [];
+  const result = await db.execute({
+    sql: `SELECT w.scheduled_day, COUNT(DISTINCT w.id) AS word_count,
+                 COUNT(a.id) AS answered, COALESCE(SUM(a.is_correct), 0) AS correct
+          FROM words w LEFT JOIN quiz_attempts a ON a.word_id = w.id AND a.participant_id = ?
+          WHERE w.set_id = ? AND w.scheduled_day BETWEEN 1 AND ?
+          GROUP BY w.scheduled_day ORDER BY w.scheduled_day`,
+    args: [participantId, set.id, opened],
+  });
+  return result.rows.map((row) => ({
+    day: rowNumber(row.scheduled_day),
+    wordCount: rowNumber(row.word_count),
+    answered: rowNumber(row.answered),
+    correct: rowNumber(row.correct),
+  }));
+}
+
+export async function getQuizDay(db: Client, participantId: number, quizDay: number, day: string): Promise<QuizDay> {
+  const person = await getParticipant(db, participantId);
+  const set = await getLatestSet(db);
+  if (!person || !set) throw new Error("Aktif program bulunamadı.");
+  const opened = openQuizDay(set, day);
+  if (!Number.isSafeInteger(quizDay) || quizDay < 1 || quizDay > opened) throw new Error("Bu quiz günü henüz açılmadı.");
+  const [wordResult, meaningResult, historyResult] = await Promise.all([
+    db.execute({
+      sql: "SELECT id, term, meaning, pronunciation FROM words WHERE set_id = ? AND scheduled_day = ? ORDER BY position",
+      args: [set.id, quizDay],
+    }),
+    db.execute({ sql: "SELECT meaning FROM words WHERE set_id = ? ORDER BY position", args: [set.id] }),
+    db.execute({
+      sql: `SELECT a.id, a.word_id, w.term, a.selected_meaning, a.correct_meaning, a.is_correct, a.attempted_at
+            FROM quiz_attempts a JOIN words w ON w.id = a.word_id
+            WHERE a.participant_id = ? AND a.quiz_day = ? AND w.set_id = ?
+            ORDER BY a.attempted_at DESC, a.id DESC`,
+      args: [participantId, quizDay, set.id],
+    }),
+  ]);
+  if (!wordResult.rows.length) throw new Error("Bu gün için quiz bulunamadı.");
+  const meanings = meaningResult.rows.map((row) => rowString(row.meaning));
+  const questions = wordResult.rows.map((row) => ({
+    wordId: rowNumber(row.id),
+    term: rowString(row.term),
+    pronunciation: rowString(row.pronunciation),
+    options: optionsForQuestion(meanings, rowString(row.meaning), participantId, rowNumber(row.id), quizDay),
+  }));
+  return {
+    day: quizDay,
+    questions: deterministicShuffle(questions, `questions:${participantId}:${quizDay}:${day}`),
+    history: historyResult.rows.map((row) => ({
+      id: rowNumber(row.id), wordId: rowNumber(row.word_id), term: rowString(row.term),
+      selectedMeaning: rowString(row.selected_meaning), correctMeaning: rowString(row.correct_meaning),
+      correct: rowNumber(row.is_correct) === 1, attemptedAt: rowString(row.attempted_at),
+    })),
+  };
+}
+
+export async function answerQuiz(db: Client, participantId: number, wordId: number, selectedMeaning: string, day: string): Promise<{ correct: boolean; correctMeaning: string }> {
+  const person = await getParticipant(db, participantId);
+  const set = await getLatestSet(db);
+  if (!person || !set || !Number.isSafeInteger(wordId) || typeof selectedMeaning !== "string") throw new Error("Geçersiz quiz cevabı.");
+  const wordResult = await db.execute({
+    sql: "SELECT id, meaning, scheduled_day FROM words WHERE id = ? AND set_id = ?",
+    args: [wordId, set.id],
+  });
+  const word = wordResult.rows[0];
+  if (!word || rowNumber(word.scheduled_day) > openQuizDay(set, day)) throw new Error("Bu quiz günü henüz açılmadı.");
+  const meaningsResult = await db.execute({ sql: "SELECT meaning FROM words WHERE set_id = ? ORDER BY position", args: [set.id] });
+  const correctMeaning = rowString(word.meaning);
+  const options = optionsForQuestion(meaningsResult.rows.map((row) => rowString(row.meaning)), correctMeaning, participantId, wordId, rowNumber(word.scheduled_day));
+  if (!options.includes(selectedMeaning)) throw new Error("Geçersiz quiz seçeneği.");
+  const correct = selectedMeaning === correctMeaning;
+  await db.execute({
+    sql: `INSERT INTO quiz_attempts (participant_id, word_id, quiz_day, selected_meaning, correct_meaning, is_correct)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [participantId, wordId, rowNumber(word.scheduled_day), selectedMeaning, correctMeaning, correct ? 1 : 0],
+  });
+  return { correct, correctMeaning };
+}
+
 export async function setDailyCheck(db: Client, participantId: number, wordId: number, checked: boolean, day: string): Promise<number> {
   const person = await getParticipant(db, participantId);
   const latest = await getLatestSet(db);
@@ -288,6 +423,12 @@ export async function setDailyCheck(db: Client, participantId: number, wordId: n
                 created_at = CASE WHEN learning_notices.status = 'cancelled' THEN CURRENT_TIMESTAMP ELSE learning_notices.created_at END`,
           args: [participantId, wordId, day, nextCount, message],
         });
+        if (nextCount === 3) {
+          await tx.execute({
+            sql: "INSERT OR IGNORE INTO learned_words (participant_id, word_id, learned_day, learned_at) VALUES (?, ?, ?, ?)",
+            args: [participantId, wordId, day, new Date().toISOString()],
+          });
+        }
       }
     } else {
       if (nextCount === 0) {

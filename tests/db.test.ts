@@ -89,3 +89,24 @@ it("preserves legacy notices and allows one notice per repeat", async () => {
   expect((await db.execute("SELECT COUNT(*) AS count FROM learning_notices")).rows[0].count).toBe(2);
   db.close();
 });
+
+it("backfills completed checks into the permanent learned archive", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kelime-learned-schema-"));
+  directories.push(directory);
+  const db = createDb(`file:${join(directory, "test.db")}`);
+  await db.execute("CREATE TABLE participants (id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, pin_hash TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  await db.execute("CREATE TABLE sets (id INTEGER PRIMARY KEY, start_day TEXT NOT NULL, duration_days INTEGER NOT NULL DEFAULT 100, program_key TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  await db.execute("CREATE TABLE words (id INTEGER PRIMARY KEY, set_id INTEGER NOT NULL, term TEXT NOT NULL, meaning TEXT NOT NULL, pronunciation TEXT NOT NULL DEFAULT '', level TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', scheduled_day INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL, UNIQUE(set_id, term))");
+  await db.execute("CREATE TABLE daily_checks (participant_id INTEGER NOT NULL, word_id INTEGER NOT NULL, day TEXT NOT NULL, checked_at TEXT NOT NULL, repeat_count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(participant_id, word_id, day))");
+  await db.execute("INSERT INTO participants (id, phone, name, pin_hash, role) VALUES (1, '+905370000000', 'Ada', 'hash', 'admin')");
+  await db.execute("INSERT INTO sets (id, start_day, duration_days, program_key) VALUES (1, '2026-09-21', 100, 'legacy-program')");
+  await db.execute("INSERT INTO words (id, set_id, term, meaning, pronunciation, scheduled_day, position) VALUES (1, 1, 'accept', 'kabul etmek', 'eksept', 1, 0)");
+  await db.execute("INSERT INTO daily_checks (participant_id, word_id, day, checked_at, repeat_count) VALUES (1, 1, '2026-09-21', '2026-09-21T12:00:00.000Z', 3)");
+
+  await ensureSchema(db);
+  await ensureSchema(db);
+
+  const learned = await db.execute("SELECT participant_id, word_id, learned_day FROM learned_words");
+  expect(learned.rows).toEqual([expect.objectContaining({ participant_id: 1, word_id: 1, learned_day: "2026-09-21" })]);
+  db.close();
+});

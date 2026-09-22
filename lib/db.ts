@@ -86,6 +86,23 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       repeat_count INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3),
       PRIMARY KEY(participant_id, word_id, day)
     )`,
+    `CREATE TABLE IF NOT EXISTS learned_words (
+      participant_id INTEGER NOT NULL REFERENCES participants(id),
+      word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      learned_day TEXT NOT NULL,
+      learned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(participant_id, word_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS quiz_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      participant_id INTEGER NOT NULL REFERENCES participants(id),
+      word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      quiz_day INTEGER NOT NULL,
+      selected_meaning TEXT NOT NULL,
+      correct_meaning TEXT NOT NULL,
+      is_correct INTEGER NOT NULL CHECK(is_correct IN (0, 1)),
+      attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
     `CREATE TABLE IF NOT EXISTS send_runs (
       slot_key TEXT PRIMARY KEY,
       status TEXT NOT NULL,
@@ -118,6 +135,8 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
   await addColumn(db, "words", "scheduled_day", "INTEGER NOT NULL DEFAULT 1");
   await addColumn(db, "daily_checks", "repeat_count", "INTEGER NOT NULL DEFAULT 1 CHECK(repeat_count BETWEEN 1 AND 3)");
   await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS sets_program_key ON sets(program_key) WHERE program_key IS NOT NULL");
+  await db.execute("CREATE INDEX IF NOT EXISTS learned_words_participant_date ON learned_words(participant_id, learned_at)");
+  await db.execute("CREATE INDEX IF NOT EXISTS quiz_attempts_participant_day ON quiz_attempts(participant_id, quiz_day, attempted_at)");
 
   const noticeColumns = await db.execute("PRAGMA table_info(learning_notices)");
   if (!noticeColumns.rows.some((row) => row.name === "repeat_count")) {
@@ -136,4 +155,6 @@ export async function ensureSchema(db: Client = getDb()): Promise<void> {
       throw error;
     }
   }
+  await db.execute(`INSERT OR IGNORE INTO learned_words (participant_id, word_id, learned_day, learned_at)
+    SELECT participant_id, word_id, day, checked_at FROM daily_checks WHERE repeat_count >= 3`);
 }
